@@ -15,11 +15,13 @@
 !
 !
 !  Modified by: Anders Bahrami
-!            1) Velocity and Periodic Boundary conditions
+!               
+!            1) Velocity and Periodic Boundary conditions, May 2026
 !
 !               Ryan Nguyen
-!            1) MRT D3Q15 model
-!            2) Improved paraview output
+!
+!            1) MRT D3Q15 model, Jun 2026
+!            2) Improved paraview output, Jun 2026
 !
 !*****************************************************************************************************************************************
 !
