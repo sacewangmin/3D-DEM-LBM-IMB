@@ -8,10 +8,18 @@
 !	              College of Engineering
 !	              Swansea University, UK
 !                 June 2015   
-!  
+!
 !  PURPOSE:  This program is aimed at modelling 1) the mechanical behaviour of geomaterials (continuous, discontinuous and granular media),
 !            2) fluid flow using Lattice Boltzmann Equation and 3) the fluid-solid interactions.
 !            It includes DEM, BPM, LBM and Their coupling schemes.
+!
+!
+!  Modified by: Anders Bahrami
+!            1) Velocity and Periodic Boundary conditions
+!
+!               Ryan Nguyen
+!            1) MRT D3Q15 model
+!            2) Improved paraview output
 !
 !*****************************************************************************************************************************************
 !
