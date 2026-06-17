@@ -201,10 +201,89 @@ contains
 
     end subroutine MRT_collision
 
+    subroutine MRT_IMB_collision(f_in, f_out, os_out, ux, uy, uz, rho, upx, upy, upz, B)
+        implicit none
+
+        real(8), intent(in)  :: f_in(0:14)
+        real(8), intent(out) :: f_out(0:14)
+        real(8), intent(out) :: os_out(0:14)
+
+        real(8), intent(in) :: ux, uy, uz, rho
+        real(8), intent(in) :: upx, upy, upz
+        real(8), intent(in) :: B
+
+        real(8) :: m_old(0:14)
+        real(8) :: m_post(0:14)
+        real(8) :: m_new(0:14)
+
+        real(8) :: m_eq_f(0:14)
+        real(8) :: m_eq_p(0:14)
+
+        real(8) :: os_mom(0:14)
+
+        integer :: i, j
+
+        ! 1. Transform incoming distributions to moment space
+        do i = 0, 14
+            m_old(i) = 0.0d0
+            do j = 0, 14
+                m_old(i) = m_old(i) + M(i,j) * f_in(j)
+            end do
+        end do
+
+        ! 2. Fluid equilibrium moments:
+        !    m_eq_f = m_eq(rho, u_fluid)
+        call MRT_equilibrium_moments(ux, uy, uz, rho, m_eq_f)
+
+        ! 3. Particle equilibrium moments:
+        !    m_eq_p = m_eq(rho, U_particle)
+        call MRT_equilibrium_moments(upx, upy, upz, rho, m_eq_p)
+
+        ! 4. MRT collision in moment space
+        !
+        !    m_post = m_old - S * (m_old - m_eq_f)
+        do i = 0, 14
+            m_post(i) = m_old(i) - S(i) * (m_old(i) - m_eq_f(i))
+        end do
+
+        ! 5. IMB correction in moment space
+        !
+        !    m_new = m_post + B * (m_eq_p - m_eq_f)
+        do i = 0, 14
+            m_new(i) = m_post(i) + B * (m_eq_p(i) - m_eq_f(i))
+        end do
+
+        ! 6. os term for hydrodynamic force
+        !
+        ! Current code uses:
+        !
+        !   os = collision_delta + peq - feq
+        !
+        ! MRT equivalent:
+        !
+        !   os_mom = (m_post - m_old) + (m_eq_p - m_eq_f)
+        !
+        ! Notice B is NOT included here because the main code already
+        ! multiplies the force by B.
+        do i = 0, 14
+            os_mom(i) = (m_post(i) - m_old(i)) + (m_eq_p(i) - m_eq_f(i))
+        end do
+
+        ! 7. Transform corrected moments back to velocity space
+        do j = 0, 14
+            f_out(j)  = 0.0d0
+            os_out(j) = 0.0d0
+
+            do i = 0, 14
+                f_out(j)  = f_out(j)  + M_inv(j,i) * m_new(i)
+                os_out(j) = os_out(j) + M_inv(j,i) * os_mom(i)
+            end do
+        end do
+
+    end subroutine MRT_IMB_collision
+
     ! Following Guo forcing in moment space
-    ! FORCING NOT IMPLEMENTED IN MAIN CODE YET
-    ! This function is just place holder for now. Will need to come back once main code is updated
-    subroutine MRT_collision_forcing(f_in, f_out, ux, uy, uz, rho, Fx, Fy, Fz)
+    subroutine MRT_collision_body_forcing(f_in, f_out, ux, uy, uz, rho, Fx, Fy, Fz)
         implicit none
         real(8), intent(in)  :: f_in(0:14)
         real(8), intent(out) :: f_out(0:14)
@@ -300,7 +379,7 @@ contains
         end do
 
 
-    end subroutine MRT_collision_forcing
+    end subroutine MRT_collision_body_forcing
  
     subroutine MRT_equilibrium_moments(ux, uy, uz, rho, m_eq_out)
         implicit none
