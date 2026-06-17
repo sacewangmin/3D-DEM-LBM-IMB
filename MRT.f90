@@ -380,6 +380,175 @@ contains
 
 
     end subroutine MRT_collision_body_forcing
+
+    subroutine MRT_IMB_collision_body_forcing(&
+        f_in, f_out, os_out,                  &
+        ux, uy, uz, rho,                      &
+        upx, upy, upz, B,                     &
+        Fx, Fy, Fz)
+
+        implicit none
+
+    !.....Incoming and outgoing distributions
+        real(8), intent(in)  :: f_in(0:14)
+        real(8), intent(out) :: f_out(0:14)
+
+    !.....IMB exchange operator used for particle force
+        real(8), intent(out) :: os_out(0:14)
+
+    !.....Fluid velocity and density
+    !.....The corrected velocity is calculated inside this routine
+        real(8), intent(out) :: ux, uy, uz, rho
+
+    !.....Particle translational velocity
+        real(8), intent(in) :: upx, upy, upz
+
+    !.....IMB solid weighting coefficient
+        real(8), intent(in) :: B
+
+    !.....Body-force density
+        real(8), intent(in) :: Fx, Fy, Fz
+
+    !.....Moment-space arrays
+        real(8) :: m_old(0:14)
+        real(8) :: m_post(0:14)
+        real(8) :: m_new(0:14)
+
+        real(8) :: m_eq_f(0:14)
+        real(8) :: m_eq_p(0:14)
+
+        real(8) :: os_mom(0:14)
+
+    !.....Guo force arrays
+        real(8) :: Rg(0:14)
+        real(8) :: Cmom(0:14)
+
+    !.....Raw momentum and temporary force quantities
+        real(8) :: momx, momy, momz
+        real(8) :: e_dot_u, e_dot_F, u_dot_F
+
+        integer :: i, j
+
+    ! 1. Compute density and raw momentum
+
+        rho  = 0.0d0
+        momx = 0.0d0
+        momy = 0.0d0
+        momz = 0.0d0
+
+        do i = 0, 14
+
+            rho  = rho  + f_in(i)
+            momx = momx + f_in(i)*ex(i)
+            momy = momy + f_in(i)*ey(i)
+            momz = momz + f_in(i)*ez(i)
+
+        end do
+
+    ! 2. Guo half-force velocity correction
+
+        ux = (momx + 0.5d0*dt*Fx)/rho
+        uy = (momy + 0.5d0*dt*Fy)/rho
+        uz = (momz + 0.5d0*dt*Fz)/rho
+
+
+    ! 3. Transform incoming distributions to moment space
+
+        do i = 0, 14
+
+            m_old(i) = 0.0d0
+
+            do j = 0, 14
+                m_old(i) = m_old(i) + M(i,j)*f_in(j)
+            end do
+
+        end do
+
+
+    ! 4. Fluid and particle equilibrium moments
+
+        call MRT_equilibrium_moments(ux, uy, uz, rho, m_eq_f)
+
+        call MRT_equilibrium_moments(upx, upy, upz, rho, m_eq_p)
+
+
+    ! 5. Existing validated MRT collision
+
+        do i = 0, 14
+
+            m_post(i) = m_old(i) - S(i)*(m_old(i)-m_eq_f(i))
+
+        end do
+
+
+    ! 6. Guo forcing in velocity space
+
+        u_dot_F = ux*Fx + uy*Fy + uz*Fz
+
+        do i = 0, 14
+
+            e_dot_u = ex(i)*ux + ey(i)*uy + ez(i)*uz
+            e_dot_F = ex(i)*Fx + ey(i)*Fy + ez(i)*Fz
+
+            Rg(i) = w(i) * ((e_dot_F-u_dot_F)/cs2       &
+                          + (e_dot_u*e_dot_F)/(cs2*cs2) )
+
+        end do
+
+
+    ! 7. Transform Guo source to moment space
+
+        do i = 0, 14
+
+            Cmom(i) = 0.0d0
+
+            do j = 0, 14
+                Cmom(i) = Cmom(i) + M(i,j)*Rg(j)
+            end do
+
+        end do
+
+
+    ! 8. MRT-IMB collision with forcing on the fluid fraction
+
+        do i = 0, 14
+
+            m_new(i) = m_post(i)                              &
+                     + B*(m_eq_p(i)-m_eq_f(i))                &
+                     + (1.0d0-B)*dt                           &
+                     * (1.0d0-0.5d0*S(i))*Cmom(i)
+
+        end do
+
+
+    ! 9. IMB exchange operator for particle hydrodynamic force
+    !    The external Guo source is intentionally not included here.
+
+        do i = 0, 14
+
+            os_mom(i) = (m_post(i)-m_old(i))                  &
+                    + (m_eq_p(i)-m_eq_f(i))
+
+        end do
+
+
+    ! 10. Transform distributions and IMB operator back to velocity space
+
+        do j = 0, 14
+
+            f_out(j)  = 0.0d0
+            os_out(j) = 0.0d0
+
+            do i = 0, 14
+
+                f_out(j) = f_out(j) + M_inv(j,i)*m_new(i)
+
+                os_out(j) = os_out(j)   + M_inv(j,i)*os_mom(i)
+
+            end do
+        end do
+
+    end subroutine MRT_IMB_collision_body_forcing
  
     subroutine MRT_equilibrium_moments(ux, uy, uz, rho, m_eq_out)
         implicit none
