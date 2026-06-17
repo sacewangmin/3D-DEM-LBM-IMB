@@ -4041,7 +4041,7 @@ End subroutine
     use solid
     use fluid
     use fs_inter 
-    use MRT, only : MRT_collision
+    use MRT, only : MRT_collision, MRT_collision_body_forcing
     implicit none
 !    IMPLICIT DOUBLE PRECISION (A-H,O-Z)
 !    
@@ -4051,6 +4051,7 @@ End subroutine
       real(8)::ex(14)=(/1,-1,0,0,0,0,1,-1,1,-1,1,-1,1,-1/)
       real(8)::ey(14)=(/0,0,1,-1,0,0,1,-1,1,-1,-1,1,-1,1/)
       real(8)::ez(14)=(/0,0,0,0,1,-1,1,-1,-1,1,1,-1,-1,1/)
+      real(8) Fx, Fy, Fz
       integer ixs,ixe,nn,ipr
 !
 ! write(*,*) "relaxation is working at the beginning"
@@ -4108,10 +4109,23 @@ End subroutine
           if(use_MRT)then
 
             if(BODYF.eq.1)then
-              stop "ERROR: BODYF=1 is not implemented for MRT Relaxation yet"
-            end if
+              !stop "ERROR: BODYF=1 is not implemented for MRT Relaxation yet"
+              ! body force density and gravity in y-dir
+              Fx = 0.0d0
+              Fy = -den*gacce
+              Fz = 0.0d0
 
-            call MRT_collision(temp(:, ix, iy, iz), node(ix, iy, iz)%fdd, ux, uy, uz, den)
+              ! Note that guo forcing is already within this subroutine
+              call MRT_collision_body_forcing(temp(:,ix,iy,iz), &
+                                              node(ix,iy,iz)%fdd, &
+                                              ux,uy,uz,den, &
+                                              Fx,Fy,Fz)
+
+            else
+              ! Normal collision
+              call MRT_collision(temp(:, ix, iy, iz), node(ix, iy, iz)%fdd, ux, uy, uz, den)
+              
+            end if
 
           else
 
@@ -4205,7 +4219,7 @@ End subroutine
     use solid,only:particle,gacce
     use fluid,only:node,temp,BODYF,fi_body
     use system, only: use_MRT
-    use MRT, only : MRT_collision, MRT_IMB_collision
+    use MRT, only : MRT_collision, MRT_IMB_collision, MRT_collision_body_forcing, MRT_IMB_collision_body_forcing
     IMPLICIT DOUBLE PRECISION (A-H,O-Z)
       real(8) ex(14),ey(14),ez(14),u1,u2,u3
 !.....local variables
@@ -4213,15 +4227,32 @@ End subroutine
       real(8)  feq(0:14),peq(0:14),par(4),vol
       ! real(8)  f_mrt_post(0:14), delta_f
       real(8)  os_mrt(0:14)
+      real(8) Fx, Fy, Fz
 !
 !.....Compute nodal density and velocities
       call nodal_velocity(ix,iy,iz,nx,ny,nz,ux,uy,uz,den)
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !            write(*,*) uy
-            if(BODYF.eq.1)then
-              uy=uy-0.5*gacce
-            end if
+      ! Get body force density
+      if(BODYF.eq.1)then
+
+        Fx=0.0d0
+        Fy=-den*gacce
+        Fz=0.0d0
+
+      else
+
+        Fx=0.0d0
+        Fy=0.0d0
+        Fz=0.0d0
+
+      end if
+
+
+      if(BODYF.eq.1 .and. .not.use_MRT)then
+        uy=uy-0.5*gacce
+      end if
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !.....Compute equilibrium function
       if(.not. use_MRT)then
@@ -4234,17 +4265,10 @@ End subroutine
       ! Note that currently feq and peq are from BGK equilibrium
       ! Perhaps a MRT version of equilibrium in vel space is needed to be fully consistnent for IMB
       ! This is done now
-      if(use_MRT)then
-        if(BODYF.eq.1)then
-          stop "Error: BODYF=1 not implemented for MRT IMB yet"
-        end if
 
-        ! call MRT_collision(temp(:, ix, iy, iz), f_mrt_post, ux, uy, uz, den)
-
-      end if
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	  if(BODYF.eq.1) call body_force_density(ix,iy,iz,ux,uy,uz,den)
+	  if(BODYF.eq.1 .and. .not.use_MRT) call body_force_density(ix,iy,iz,ux,uy,uz,den)
 !      write(*,*) BODYF,uy,fi_body(7)
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !.....Compute nodal area covered by particle
@@ -4284,9 +4308,27 @@ End subroutine
               ! m_eq_p = m_eq(rho, particle velocity)
               ! m_new  = m_post + B * (m_eq_p - m_eq_f)
 
-              call MRT_IMB_collision( &
-                  temp(:,ix,iy,iz), node(ix,iy,iz)%fdd, os_mrt, &
-                  ux, uy, uz, den, u1, u2, u3, B )
+                  if(BODYF.eq.1)then
+                    !.....MRT-IMB with body forcing
+                    call MRT_IMB_collision_body_forcing(              &
+                        temp(:,ix,iy,iz),                             &
+                        node(ix,iy,iz)%fdd,                           &
+                        os_mrt,                                       &
+                        ux,uy,uz,den,                                 &
+                        u1,u2,u3,B,                                   &
+                        Fx,Fy,Fz)
+
+                  
+                  else
+                    !.....MRT-IMB without body forcing
+                    call MRT_IMB_collision(                           &
+                        temp(:,ix,iy,iz),                             &
+                        node(ix,iy,iz)%fdd,                           &
+                        os_mrt,                                       &
+                        ux,uy,uz,den,                                 &
+                        u1,u2,u3,B)
+
+                  end if
 
               do i = 1, 14
                 fx = fx + os_mrt(i) * ex(i)
@@ -4328,7 +4370,22 @@ End subroutine
 !     zero volume
 	  else
         if ( use_MRT ) then
-          call MRT_collision(temp(:, ix, iy, iz), node(ix, iy, iz)%fdd, ux, uy, uz, den)
+          if(BODYF.eq.1)then
+
+            call MRT_collision_body_forcing(              &
+                 temp(:,ix,iy,iz),                        &
+                 node(ix,iy,iz)%fdd,                      &
+                 ux,uy,uz,den,                            &
+                 Fx,Fy,Fz)
+
+          else
+
+            call MRT_collision(                           &
+                 temp(:,ix,iy,iz),                        &
+                 node(ix,iy,iz)%fdd,                      &
+                 ux,uy,uz,den)
+
+          end if
           ! node(ix,iy,iz)%fdd(i) = f_mrt_post(i)
         else
           do i=0,14
