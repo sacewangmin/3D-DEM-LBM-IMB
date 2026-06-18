@@ -75,7 +75,7 @@
       logical LBM,lubrication,uniaxial
 !.....flags for Immersed Boundary method and Immersed Moving Boundary
       logical IBM,IMB
-!===== for coarsE-grid LBM-DEM coupled by empirical equations
+!===== for coarse-grid LBM-DEM coupled by empirical equations
       logical empirical
 !=====
 !.....flags for periodic boundary (only used if bctype=3)
@@ -94,6 +94,8 @@
 	  integer i,j,k,is,ie,ip,ix,iy,iz
 !.....parameter used in pointers err!=0:out of memory;  flag for pointer code check
       integer err,pointer_check
+!     implementation mthods for periodic
+      integer implement
 !.....used for dealing with moving wall nodes  (integeration)
       real(8),allocatable::vertex_mw(:,:)
 !.....used for dealing with stationary nodes under conditions of moving wall-fluid interaction 
@@ -1234,6 +1236,8 @@ vertex(3,8)=zmax
 	        enddo
 !.........type 3: specified inlet velocities
           else if(bctype.eq.3) then
+            allocate(bc(2))
+            read(10,*) periodic_flag,implement
             read(10,*) bc(1),bc(2)
 	      endif          
 !
@@ -1557,6 +1561,56 @@ vertex(3,8)=zmax
       enddo
 
 !
+
+    if (bctype.eq.3) then
+
+        if (periodic_flag) then
+          print *, "Periodic activated!"
+          return
+        end if
+        print *, "NOT Periodic!"
+
+        do iy=0, ny
+        do ix=0, nx
+          node(ix,iy,nz)%obst=1
+          now0=now0+1
+          lnw0(1,now0)=ix
+          lnw0(2,now0)=iy
+          lnw0(3,now0)=nz
+        enddo
+        enddo
+  !.....Set bottom wall boundary
+        do iy=0, ny
+        do ix=0, nx
+          node(ix,iy,0)%obst=1
+          now0=now0+1
+          lnw0(1,now0)=ix
+          lnw0(2,now0)=iy
+          lnw0(3,now0)=0
+        enddo
+        enddo
+  !.....Set front wall boundary
+        do iz=1, nz-1
+        do ix=0, nx
+          node(ix,0,iz)%obst=1
+          now0=now0+1
+          lnw0(1,now0)=ix
+          lnw0(2,now0)=0
+          lnw0(3,now0)=iz
+        enddo
+        enddo
+  !.....Set back wall boundary
+        do iz=1, nz-1
+        do ix=0, nx
+          node(ix,ny,iz)%obst=1
+          now0=now0+1
+          lnw0(1,now0)=ix
+          lnw0(2,now0)=ny
+          lnw0(3,now0)=iz
+        enddo
+        enddo
+
+    else
       now0=0
 !.....Set top wall boundary
       do iy=0, ny
@@ -1618,6 +1672,7 @@ vertex(3,8)=zmax
         lnw0(3,now0)=iz
       enddo
       enddo  
+    endif
 !      open(10001,file='wall_nodes_list.txt')      
 !      do i=1,now0
 !        write(10001,*) i, lnw0(1:3,i)
@@ -3516,8 +3571,8 @@ vertex(3,8)=zmax
 
     open(unit=999,file=output_path,status='replace')
     !output csv file
-    open(unit=9999,file=output_path2,status='replace')
-    write(9999,'(A)') ' ID, X, Y, Z, Diameter, VX, VY, VZ, FX, FY, FZ'
+!    open(unit=9999,file=output_path2,status='replace')
+!    write(9999,'(A)') ' ID, X, Y, Z, Diameter, VX, VY, VZ, FX, FY, FZ'
 
 
 
@@ -3535,8 +3590,8 @@ vertex(3,8)=zmax
     write(999,'(A)') '        <DataArray type="Float64" Name="radius" NumberOfComponents="1" format="ascii">'
     do i=1,np
         write(999,'(ES24.16)') particle(i)%radius
-        write(9999,*) i, ",",particle(i)%coor(1),",",particle(i)%coor(2),",",particle(i)%coor(3),",",2.0*particle(i)%radius,",",particle(i)%U(1),",",particle(i)%U(2), &
-        ",",particle(i)%U(3),",",particle(i)%F(1),",",particle(i)%F(2),",",particle(i)%F(3)
+!        write(9999,*) i, ",",particle(i)%coor(1),",",particle(i)%coor(2),",",particle(i)%coor(3),",",2.0*particle(i)%radius,",",particle(i)%U(1),",",particle(i)%U(2), &
+!        ",",particle(i)%U(3),",",particle(i)%F(1),",",particle(i)%F(2),",",particle(i)%F(3)
     end do
     write(999,'(A)') '        </DataArray>'
 
@@ -3587,7 +3642,7 @@ vertex(3,8)=zmax
     write(999,'(A)') '</VTKFile>'
 
     close(999)
-    close(9999)
+!    close(9999)
 
 
 
@@ -4112,7 +4167,7 @@ vertex(3,8)=zmax
 
           else
 
-	        call equilibrium_function(ux,uy,uz,den,feq)
+	          call equilibrium_function(ux,uy,uz,den,feq)
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             if(BODYF.eq.1)then
               uy=uy-0.5*gacce
@@ -4124,13 +4179,13 @@ vertex(3,8)=zmax
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !write(*,*) rtao,feq
 !stop
-	        do j=0,14
+	          do j=0,14
               if(BODYF.eq.1)then
                 node(ix,iy,iz)%fdd(j)=temp(j,ix,iy,iz)+rtao*(feq(j)-temp(j,ix,iy,iz))+fi_body(j)
               else
                 node(ix,iy,iz)%fdd(j)=temp(j,ix,iy,iz)+rtao*(feq(j)-temp(j,ix,iy,iz))
               end if
-	        enddo
+	          enddo
           end if
 
 	      endif
@@ -4392,6 +4447,9 @@ vertex(3,8)=zmax
 !
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     Subroutine propagate
+!========
+    use system,only:istep,periodic_flag,implement
+!========
     use fluid,only:node,temp,nx,ny,nz
     IMPLICIT DOUBLE PRECISION (A-H,O-Z)
 !.....local variables
@@ -4410,6 +4468,17 @@ vertex(3,8)=zmax
 	          zu = iz + 1
             zd = iz - 1
 !
+!=======
+          if(periodic_flag .and. implement==2)then
+            if (xr>nx) xr=0
+            if (xl<0)  xl=nx
+            if (yb>ny) yb=0
+            if (yf<0)  yf=ny
+            if (zu>nz) zu=0
+            if (zd<0)  zd=nz
+!            write(*,*) "PBC 2 is used"
+          endif
+!========
 !...........zero
             temp(0,ix,iy,iz) = node(ix,iy,iz)%fdd(0)
 !
@@ -4442,53 +4511,157 @@ vertex(3,8)=zmax
 !
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     Subroutine boundary_treatment_regular
-    use system,only:wall,vertex
-    use fluid,only:bctype,bc,neb,eb,nx,ny,temp,bc_mode,node
+    use system,only:wall,vertex,periodic_flag,istep,implement
+    use fluid,only:bctype,bc,neb,eb,nx,ny,nz,temp,bc_mode,node
     IMPLICIT DOUBLE PRECISION (A-H,O-Z)
 !
 !.....Periodic boundaries at inlet and outlet
-      if(bctype.eq.1)then
-        if(bc_mode.eq.1)then
+!       if(bctype.eq.1)then
+!         if(bc_mode.eq.1)then
+! 	        do iz=0,nz
+! 	        do iy=0,ny
+!             temp(1,0,iy,iz)=temp(1,nx+1,iy,iz)
+! 	          temp(7,0,iy,iz)=temp(7,nx+1,iy,iz)
+! 	          temp(9,0,iy,iz)=temp(9,nx+1,iy,iz)
+! 	          temp(11,0,iy,iz)=temp(11,nx+1,iy,iz)
+! 	          temp(13,0,iy,iz)=temp(13,nx+1,iy,iz)
+! 	          temp(2,nx,iy,iz)=temp(2,-1,iy,iz)
+! 	          temp(8,nx,iy,iz)=temp(8,-1,iy,iz)
+! 	          temp(10,nx,iy,iz)=temp(10,-1,iy,iz)
+! 	          temp(12,nx,iy,iz)=temp(12,-1,iy,iz)
+! 	          temp(14,nx,iy,iz)=temp(14,-1,iy,iz)
+!           enddo
+!           enddo
+!         else
+! !          do ix=1,nx-1
+! !            temp(4, ix,ny )=temp(4,ix,-1)
+! !            temp(7, ix,ny )=temp(7,ix,-1)
+! !            temp(8, ix,ny )=temp(8,ix,-1)
+! !            temp(2,ix,0 )=temp(2,ix,ny+1)
+! !            temp(5,ix,0 )=temp(5,ix,ny+1)
+! !            temp(6,ix,0 )=temp(6,ix,ny+1) 
+! !          end do
+!         end if
+
+      ! Periodic boundaries in y and z directions
+      if(bctype.eq.3)then
+
+        if(periodic_flag .and. implement==1)then
+	        do ix=0,nx
 	        do iz=0,nz
-	        do iy=0,ny
-            temp(1,0,iy,iz)=temp(1,nx+1,iy,iz)
-	          temp(7,0,iy,iz)=temp(7,nx+1,iy,iz)
-	          temp(9,0,iy,iz)=temp(9,nx+1,iy,iz)
-	          temp(11,0,iy,iz)=temp(11,nx+1,iy,iz)
-	          temp(13,0,iy,iz)=temp(13,nx+1,iy,iz)
-	          temp(2,nx,iy,iz)=temp(2,-1,iy,iz)
-	          temp(8,nx,iy,iz)=temp(8,-1,iy,iz)
-	          temp(10,nx,iy,iz)=temp(10,-1,iy,iz)
-	          temp(12,nx,iy,iz)=temp(12,-1,iy,iz)
-	          temp(14,nx,iy,iz)=temp(14,-1,iy,iz)
+            ! front
+            temp(3,ix,0,iz)=temp(3,ix,ny+1,iz)
+	          temp(7,ix,0,iz)=temp(7,ix,ny+1,iz)
+	          temp(9,ix,0,iz)=temp(9,ix,ny+1,iz)
+	          temp(12,ix,0,iz)=temp(12,ix,ny+1,iz)
+	          temp(14,ix,0,iz)=temp(14,ix,ny+1,iz)
+
+            ! back
+	          temp(4,ix,ny,iz)=temp(4,ix,-1,iz)
+	          temp(8,ix,ny,iz)=temp(8,ix,-1,iz)
+	          temp(10,ix,ny,iz)=temp(10,ix,-1,iz)
+	          temp(11,ix,ny,iz)=temp(11,ix,-1,iz)
+	          temp(13,ix,ny,iz)=temp(13,ix,-1,iz)
           enddo
-          end do
-        else
-!          do ix=1,nx-1
-!            temp(4, ix,ny )=temp(4,ix,-1)
-!            temp(7, ix,ny )=temp(7,ix,-1)
-!            temp(8, ix,ny )=temp(8,ix,-1)
-!            temp(2,ix,0 )=temp(2,ix,ny+1)
-!            temp(5,ix,0 )=temp(5,ix,ny+1)
-!            temp(6,ix,0 )=temp(6,ix,ny+1) 
-!          end do
-        end if
-!
-!.....Specified densities
-      else if(bctype.eq.2)then
-	      din=bc(1)
-	      dout=bc(2)
-!.......inlet
-        do iz=0,nz
+          enddo
+          do ix=0,nx
           do iy=0,ny
-	      ux=1.d0-(temp(0,0,iy,iz)+temp(3,0,iy,iz)+temp(4,0,iy,iz) &
+            ! bottom
+            temp(5,ix,iy,0)=temp(5,ix,iy,nz+1)
+	          temp(7,ix,iy,0)=temp(7,ix,iy,nz+1)
+	          temp(10,ix,iy,0)=temp(10,ix,iy,nz+1)
+	          temp(11,ix,iy,0)=temp(11,ix,iy,nz+1)
+	          temp(14,ix,iy,0)=temp(14,ix,iy,nz+1)
+
+            ! top
+	          temp(6,ix,iy,nz)=temp(6,ix,iy,-1)
+	          temp(8,ix,iy,nz)=temp(8,ix,iy,-1)
+	          temp(9,ix,iy,nz)=temp(9,ix,iy,-1)
+	          temp(12,ix,iy,nz)=temp(12,ix,iy,-1)
+	          temp(13,ix,iy,nz)=temp(13,ix,iy,-1)
+          end do
+          end do
+! ========          
+!            call nodal_velocity(0,0,0,nx,ny,nz,ux,uy,uz,den)
+!            write(*,*) "BC1 before edge: ",istep, ux,uy,uz,den
+!            write(*,*) temp(:,0,0,0)
+!========    
+          do ix=0,nx
+            ! bottom front edge
+            temp(7,ix,0,0)=temp(7,ix,ny+1,nz+1)
+            temp(14,ix,0,0)=temp(14,ix,ny+1,nz+1)
+
+            ! temp(3,ix,ny,0)=temp(3,ix,-1,0)
+            ! temp(9,ix,ny,0)=temp(9,ix,-1,0)
+            ! temp(12,ix,ny,0)=temp(12,ix,-1,0)
+
+            ! temp(5,ix,ny,0)=temp(5,ix,ny,nz+1)
+            ! temp(10,ix,ny,0)=temp(10,ix,ny,nz+1)
+            ! temp(11,ix,ny,0)=temp(11,ix,ny,nz+1) ! from top
+            
+
+            ! top front edge
+            temp(9,ix,0,nz)=temp(9,ix,ny+1,-1)
+            temp(12,ix,0,nz)=temp(12,ix,ny+1,-1)
+
+            ! temp(3,ix,ny,nz)=temp(3,ix,-1,nz)
+            ! temp(7,ix,ny,nz)=temp(7,ix,-1,nz) ! back
+            ! temp(14,ix,ny,nz)=temp(14,ix,-1,nz)
+
+            ! temp(6,ix,ny,nz)=temp(6,ix,ny,-1)
+            ! temp(8,ix,ny,nz)=temp(8,ix,ny,-1)
+            ! temp(13,ix,ny,nz)=temp(13,ix,ny,-1) ! bottom
+            
+
+            ! bottom back edge
+            temp(10,ix,ny,0)=temp(10,ix,-1,nz+1)
+            temp(11,ix,ny,0)=temp(11,ix,-1,nz+1)
+
+            ! temp(4,ix,0,0)=temp(4,ix,ny+1,0)
+            ! temp(8,ix,0,0)=temp(8,ix,ny+1,0)
+            ! temp(13,ix,0,0)=temp(13,ix,ny+1,0) ! front 
+
+            ! temp(5,ix,0,0)=temp(5,ix,0,nz+1)
+            ! temp(7,ix,0,0)=temp(7,ix,0,nz+1)
+            ! temp(14,ix,0,0)=temp(14,ix,0,nz+1) ! top
+
+
+            ! top back edge
+            temp(8,ix,ny,nz)=temp(8,ix,-1,-1)
+            temp(13,ix,ny,nz)=temp(13,ix,-1,-1)
+
+            ! temp(4,ix,0,nz)=temp(4,ix,ny+1,nz)
+            ! temp(10,ix,0,nz)=temp(10,ix,ny+1,nz) ! front
+            ! temp(11,ix,0,nz)=temp(11,ix,ny+1,nz)
+
+            ! temp(6,ix,0,nz)=temp(6,ix,0,-1)
+            ! temp(9,ix,0,nz)=temp(9,ix,0,-1) ! bottom
+            ! temp(12,ix,0,nz)=temp(12,ix,0,-1)
+          enddo
+!=========
+            ! call nodal_velocity(0,0,0,nx,ny,nz,ux,uy,uz,den)
+            ! write(*,*) "BC1 after edge: ",istep, ux,uy,uz,den
+            ! write(*,*) temp(:,0,0,0)
+!=========
+        end if
+
+        ! print *, istep, temp(0:14,nx/2,ny/2,0)
+
+        ux_in=bc(1)
+        ux_out=bc(2)
+        ! print *, ux_in, ux_out
+!.......inlet
+        do iz=-1,nz+1
+          do iy=-1,ny+1
+        din2=-(temp(0,0,iy,iz)+temp(3,0,iy,iz)+temp(4,0,iy,iz) &
              +temp(5,0,iy,iz)+temp(6,0,iy,iz)+2.d0*(temp(2,0,iy,iz) &
              +temp(8,0,iy,iz)+temp(10,0,iy,iz)+temp(12,0,iy,iz) &
-             +temp(14,0,iy,iz)))/din
-            tmp=1.d0/12.d0*din*ux
+             +temp(14,0,iy,iz)))/(ux_in-1.d0)
+        tmp=1.d0/12.d0*din2*ux_in
 	      temp(1,0,iy,iz)=temp(2,0,iy,iz)+8.d0*tmp
 	      tmp1=temp(3,0,iy,iz)-temp(4,0,iy,iz)
 	      tmp2=temp(5,0,iy,iz)-temp(6,0,iy,iz)
+        ! if (iy == 0 .and. iz == 0) print *, "compare to temp13", 0, iy, iz, temp(14,0,iy,iz), tmp, -0.25d0*(-tmp1-tmp2)
 	      temp(7,0,iy,iz)=temp(8,0,iy,iz)+tmp-0.25d0*(tmp1+tmp2)
 	      temp(9,0,iy,iz)=temp(10,0,iy,iz)+tmp-0.25d0*(tmp1-tmp2)
 	      temp(11,0,iy,iz)=temp(12,0,iy,iz)+tmp-0.25d0*(-tmp1+tmp2)
@@ -4496,13 +4669,13 @@ vertex(3,8)=zmax
           enddo
         enddo
 !.......outlet
-        do iz=0,nz
-          do iy=0,ny
-	      ux=-1.d0+(temp(0,nx,iy,iz)+temp(3,nx,iy,iz)+temp(4,nx,iy,iz) &
+        do iz=-1,nz+1
+          do iy=-1,ny+1
+        dout2=(temp(0,nx,iy,iz)+temp(3,nx,iy,iz)+temp(4,nx,iy,iz) &
              +temp(5,nx,iy,iz)+temp(6,nx,iy,iz)+2.d0*(temp(1,nx,iy,iz) &
              +temp(7,nx,iy,iz)+temp(9,nx,iy,iz)+temp(11,nx,iy,iz) &
-             +temp(13,nx,iy,iz)))/dout
-            tmp=1.d0/12.d0*dout*ux
+             +temp(13,nx,iy,iz)))/(ux_out+1.d0)
+        tmp=1.d0/12.d0*dout2*ux_out
 	      temp(2,nx,iy,iz)=temp(1,nx,iy,iz)-8.d0*tmp
 	      tmp1=temp(3,nx,iy,iz)-temp(4,nx,iy,iz)
 	      tmp2=temp(5,nx,iy,iz)-temp(6,nx,iy,iz)
@@ -4510,71 +4683,131 @@ vertex(3,8)=zmax
 	      temp(10,nx,iy,iz)=temp(9,nx,iy,iz)-tmp-0.25d0*(-tmp1+tmp2)
 	      temp(12,nx,iy,iz)=temp(11,nx,iy,iz)-tmp-0.25d0*(tmp1-tmp2)
 	      temp(14,nx,iy,iz)=temp(13,nx,iy,iz)-tmp-0.25d0*(tmp1+tmp2)
+
+        if (istep==1 .and. periodic_flag)then
+           
+
+        endif
+                  ! if(istep==1 .and. periodic_flag)then
+          !   ux=bc(1)
+          !   uy=0.0d0
+          !   uz=0.0d0
+          ! endif
+ !         write(*,*) istep, ix,iy,iz, ux,uy,uz
           enddo
         end do
-!.......Special treatment for corner nodes
-!       left bottom inlet segment
-        do iy=0,ny
-          temp(1,0,iy,0)=temp(2,0,iy,0)
-	    temp(5,0,iy,0)=temp(6,0,iy,0)
-	    tmp1=temp(3,0,iy,0)-temp(4,0,iy,0)
-	    temp(7,0,iy,0)=temp(8,0,iy,0)-0.5d0*tmp1
-	    temp(11,0,iy,0)=temp(12,0,iy,0)+0.5d0*tmp1
-	    temp(9,0,iy,0)=0.25d0*(din-temp(0,0,iy,0)-temp(1,0,iy,0) &
-                       -temp(2,0,iy,0)-temp(3,0,iy,0)-temp(4,0,iy,0) &
-                       -temp(5,0,iy,0)-temp(6,0,iy,0)-temp(7,0,iy,0) &
-                       -temp(8,0,iy,0)-temp(11,0,iy,0)-temp(12,0,iy,0))
-	    temp(10,0,iy,0)=temp(9,0,iy,0)
-	    temp(13,0,iy,0)=temp(9,0,iy,0)
-	    temp(14,0,iy,0)=temp(9,0,iy,0)
-         end do
-!       left top inlet segment
-        do iy=0,ny
-          temp(1,0,iy,nz)=temp(2,0,iy,nz)
-	    temp(6,0,iy,nz)=temp(5,0,iy,nz)
-	    tmp1=temp(3,0,iy,nz)-temp(4,0,iy,nz)
-	    temp(9,0,iy,nz)=temp(10,0,iy,nz)-0.5d0*tmp1
-	    temp(13,0,iy,nz)=temp(14,0,iy,nz)+0.5d0*tmp1
-	    temp(7,0,iy,nz)=0.25d0*(din-temp(0,0,iy,nz)-temp(1,0,iy,nz) &
-                   -temp(2,0,iy,nz)-temp(3,0,iy,nz)-temp(4,0,iy,nz) &
-                   -temp(5,0,iy,nz)-temp(6,0,iy,nz)-temp(9,0,iy,nz) &
-                   -temp(10,0,iy,nz)-temp(13,0,iy,nz)-temp(14,0,iy,nz))
-	    temp(8,0,iy,nz)=temp(7,0,iy,nz)
-	    temp(11,0,iy,nz)=temp(7,0,iy,nz)
-	    temp(12,0,iy,nz)=temp(7,0,iy,nz)
-        enddo
-!       right bottom outlet segment
-        do iy=0,ny
-          temp(2,nx,iy,0)=temp(1,nx,iy,0)
-	    temp(5,nx,iy,0)=temp(6,nx,iy,0)
-	    tmp1=temp(3,nx,iy,0)-temp(4,nx,iy,0)
-	    temp(10,nx,iy,0)=temp(9,nx,iy,0)+0.5d0*tmp1
-	    temp(14,nx,iy,0)=temp(13,nx,iy,0)-0.5d0*tmp1
-	    temp(7,nx,iy,0)=0.25d0*(dout-temp(0,nx,iy,0)-temp(1,nx,iy,0) &
-                   -temp(2,nx,iy,0)-temp(3,nx,iy,0)-temp(4,nx,iy,0) &
-                   -temp(5,nx,iy,0)-temp(6,nx,iy,0)-temp(9,nx,iy,0) &
-                   -temp(10,nx,iy,0)-temp(13,nx,iy,0)-temp(14,nx,iy,0))
-	    temp(8,nx,iy,0)=temp(7,nx,iy,0)
-	    temp(11,nx,iy,0)=temp(7,nx,iy,0)
-	    temp(12,nx,iy,0)=temp(7,nx,iy,0)
-        enddo
-!       right top outlet segment
-        do iy=0,ny
-          temp(2,nx,iy,nz)=temp(1,nx,iy,nz)
-	    temp(6,nx,iy,nz)=temp(5,nx,iy,nz)
-	    tmp1=temp(3,nx,iy,nz)-temp(4,nx,iy,nz)
-	    temp(8,nx,iy,nz)=temp(7,nx,iy,nz)+0.5d0*tmp1
-	    temp(12,nx,iy,nz)=temp(11,nx,iy,nz)-0.5d0*tmp1
-	   temp(9,nx,iy,nz)=0.25d0*(dout-temp(0,nx,iy,nz)-temp(1,nx,iy,nz) &
-                -temp(2,nx,iy,nz)-temp(3,nx,iy,nz)-temp(4,nx,iy,nz) &
-                -temp(5,nx,iy,nz)-temp(6,nx,iy,nz)-temp(7,nx,iy,nz) &
-                -temp(8,nx,iy,nz)-temp(11,nx,iy,nz)-temp(12,nx,iy,nz))
-	    temp(10,nx,iy,nz)=temp(9,nx,iy,nz)
-	    temp(13,nx,iy,nz)=temp(9,nx,iy,nz)
-	    temp(14,nx,iy,nz)=temp(9,nx,iy,nz)
-        enddo
-	    endif
-      return
+!========
+            ! call nodal_velocity(0,0,0,nx,ny,nz,ux,uy,uz,den)
+            ! write(*,*) "Ver == after velocity treatment: ",istep, ux,uy,uz,den
+            ! write(*,*) temp(:,0,0,0)
+            ! call nodal_velocity(0,0,1,nx,ny,nz,ux,uy,uz,den)
+            ! write(*,*) "Not == after velocity treatment: ",istep, ux,uy,uz,den
+            ! write(*,*) temp(:,0,0,1)
+            ! write(*,*) "--------------------"
+!========
+      end if ! bctype.eq.3
+!
+!.....Specified densities
+!       if(bctype.eq.2)then
+! 	      din=bc(1)
+! 	      dout=bc(2)
+! !.......inlet
+!         do iz=0,nz
+!           do iy=0,ny
+! 	      ux=1.d0-(temp(0,0,iy,iz)+temp(3,0,iy,iz)+temp(4,0,iy,iz) &
+!              +temp(5,0,iy,iz)+temp(6,0,iy,iz)+2.d0*(temp(2,0,iy,iz) &
+!              +temp(8,0,iy,iz)+temp(10,0,iy,iz)+temp(12,0,iy,iz) &
+!              +temp(14,0,iy,iz)))/din
+!         tmp=1.d0/12.d0*din*ux
+! 	      temp(1,0,iy,iz)=temp(2,0,iy,iz)+8.d0*tmp
+! 	      tmp1=temp(3,0,iy,iz)-temp(4,0,iy,iz)
+! 	      tmp2=temp(5,0,iy,iz)-temp(6,0,iy,iz)
+! 	      temp(7,0,iy,iz)=temp(8,0,iy,iz)+tmp-0.25d0*(tmp1+tmp2)
+! 	      temp(9,0,iy,iz)=temp(10,0,iy,iz)+tmp-0.25d0*(tmp1-tmp2)
+! 	      temp(11,0,iy,iz)=temp(12,0,iy,iz)+tmp-0.25d0*(-tmp1+tmp2)
+! 	      temp(13,0,iy,iz)=temp(14,0,iy,iz)+tmp-0.25d0*(-tmp1-tmp2)
+!           enddo
+!         enddo
+! !.......outlet
+!         do iz=0,nz
+!           do iy=0,ny
+! 	      ux=-1.d0+(temp(0,nx,iy,iz)+temp(3,nx,iy,iz)+temp(4,nx,iy,iz) &
+!              +temp(5,nx,iy,iz)+temp(6,nx,iy,iz)+2.d0*(temp(1,nx,iy,iz) &
+!              +temp(7,nx,iy,iz)+temp(9,nx,iy,iz)+temp(11,nx,iy,iz) &
+!              +temp(13,nx,iy,iz)))/dout
+!             tmp=1.d0/12.d0*dout*ux
+! 	      temp(2,nx,iy,iz)=temp(1,nx,iy,iz)-8.d0*tmp
+! 	      tmp1=temp(3,nx,iy,iz)-temp(4,nx,iy,iz)
+! 	      tmp2=temp(5,nx,iy,iz)-temp(6,nx,iy,iz)
+! 	      temp(8,nx,iy,iz)=temp(7,nx,iy,iz)-tmp-0.25d0*(-tmp1-tmp2)
+! 	      temp(10,nx,iy,iz)=temp(9,nx,iy,iz)-tmp-0.25d0*(-tmp1+tmp2)
+! 	      temp(12,nx,iy,iz)=temp(11,nx,iy,iz)-tmp-0.25d0*(tmp1-tmp2)
+! 	      temp(14,nx,iy,iz)=temp(13,nx,iy,iz)-tmp-0.25d0*(tmp1+tmp2)
+!           enddo
+!         end do
+! !.......Special treatment for corner nodes
+! !       left bottom inlet segment
+!         do iy=0,ny
+!           temp(1,0,iy,0)=temp(2,0,iy,0)
+! 	    temp(5,0,iy,0)=temp(6,0,iy,0)
+! 	    tmp1=temp(3,0,iy,0)-temp(4,0,iy,0)
+! 	    temp(7,0,iy,0)=temp(8,0,iy,0)-0.5d0*tmp1
+! 	    temp(11,0,iy,0)=temp(12,0,iy,0)+0.5d0*tmp1
+! 	    temp(9,0,iy,0)=0.25d0*(din-temp(0,0,iy,0)-temp(1,0,iy,0) &
+!                        -temp(2,0,iy,0)-temp(3,0,iy,0)-temp(4,0,iy,0) &
+!                        -temp(5,0,iy,0)-temp(6,0,iy,0)-temp(7,0,iy,0) &
+!                        -temp(8,0,iy,0)-temp(11,0,iy,0)-temp(12,0,iy,0))
+! 	    temp(10,0,iy,0)=temp(9,0,iy,0)
+! 	    temp(13,0,iy,0)=temp(9,0,iy,0)
+! 	    temp(14,0,iy,0)=temp(9,0,iy,0)
+!          end do
+! !       left top inlet segment
+!         do iy=0,ny
+!           temp(1,0,iy,nz)=temp(2,0,iy,nz)
+! 	    temp(6,0,iy,nz)=temp(5,0,iy,nz)
+! 	    tmp1=temp(3,0,iy,nz)-temp(4,0,iy,nz)
+! 	    temp(9,0,iy,nz)=temp(10,0,iy,nz)-0.5d0*tmp1
+! 	    temp(13,0,iy,nz)=temp(14,0,iy,nz)+0.5d0*tmp1
+! 	    temp(7,0,iy,nz)=0.25d0*(din-temp(0,0,iy,nz)-temp(1,0,iy,nz) &
+!                    -temp(2,0,iy,nz)-temp(3,0,iy,nz)-temp(4,0,iy,nz) &
+!                    -temp(5,0,iy,nz)-temp(6,0,iy,nz)-temp(9,0,iy,nz) &
+!                    -temp(10,0,iy,nz)-temp(13,0,iy,nz)-temp(14,0,iy,nz))
+! 	    temp(8,0,iy,nz)=temp(7,0,iy,nz)
+! 	    temp(11,0,iy,nz)=temp(7,0,iy,nz)
+! 	    temp(12,0,iy,nz)=temp(7,0,iy,nz)
+!         enddo
+! !       right bottom outlet segment
+!         do iy=0,ny
+!           temp(2,nx,iy,0)=temp(1,nx,iy,0)
+! 	    temp(5,nx,iy,0)=temp(6,nx,iy,0)
+! 	    tmp1=temp(3,nx,iy,0)-temp(4,nx,iy,0)
+! 	    temp(10,nx,iy,0)=temp(9,nx,iy,0)+0.5d0*tmp1
+! 	    temp(14,nx,iy,0)=temp(13,nx,iy,0)-0.5d0*tmp1
+! 	    temp(7,nx,iy,0)=0.25d0*(dout-temp(0,nx,iy,0)-temp(1,nx,iy,0) &
+!                    -temp(2,nx,iy,0)-temp(3,nx,iy,0)-temp(4,nx,iy,0) &
+!                    -temp(5,nx,iy,0)-temp(6,nx,iy,0)-temp(9,nx,iy,0) &
+!                    -temp(10,nx,iy,0)-temp(13,nx,iy,0)-temp(14,nx,iy,0))
+! 	    temp(8,nx,iy,0)=temp(7,nx,iy,0)
+! 	    temp(11,nx,iy,0)=temp(7,nx,iy,0)
+! 	    temp(12,nx,iy,0)=temp(7,nx,iy,0)
+!         enddo
+! !       right top outlet segment
+!         do iy=0,ny
+!           temp(2,nx,iy,nz)=temp(1,nx,iy,nz)
+! 	    temp(6,nx,iy,nz)=temp(5,nx,iy,nz)
+! 	    tmp1=temp(3,nx,iy,nz)-temp(4,nx,iy,nz)
+! 	    temp(8,nx,iy,nz)=temp(7,nx,iy,nz)+0.5d0*tmp1
+! 	    temp(12,nx,iy,nz)=temp(11,nx,iy,nz)-0.5d0*tmp1
+! 	   temp(9,nx,iy,nz)=0.25d0*(dout-temp(0,nx,iy,nz)-temp(1,nx,iy,nz) &
+!                 -temp(2,nx,iy,nz)-temp(3,nx,iy,nz)-temp(4,nx,iy,nz) &
+!                 -temp(5,nx,iy,nz)-temp(6,nx,iy,nz)-temp(7,nx,iy,nz) &
+!                 -temp(8,nx,iy,nz)-temp(11,nx,iy,nz)-temp(12,nx,iy,nz))
+! 	    temp(10,nx,iy,nz)=temp(9,nx,iy,nz)
+! 	    temp(13,nx,iy,nz)=temp(9,nx,iy,nz)
+! 	    temp(14,nx,iy,nz)=temp(9,nx,iy,nz)
+!         enddo
+! 	    endif
+       return
     End subroutine
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !
