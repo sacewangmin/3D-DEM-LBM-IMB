@@ -1,14 +1,13 @@
-
 !*****************************************************************************************************************************************
 !
 !  PROGRAM: BPLBM3D_NEW
 !
 !  DEVELOPED BY:  Min Wang
-!                 Zienkiewicz Centre for Computational Engineering
+!               Zienkiewicz Centre for Computational Engineering
 !	              College of Engineering
 !	              Swansea University, UK
-!                 June 2015   
-!
+!               June 2015   
+!  
 !  PURPOSE:  This program is aimed at modelling 1) the mechanical behaviour of geomaterials (continuous, discontinuous and granular media),
 !            2) fluid flow using Lattice Boltzmann Equation and 3) the fluid-solid interactions.
 !            It includes DEM, BPM, LBM and Their coupling schemes.
@@ -22,6 +21,7 @@
 !
 !            1) MRT D3Q15 model, Jun 2026
 !            2) Improved paraview output, Jun 2026
+!            3) Body force subroutine added, Jun 2026
 !
 !*****************************************************************************************************************************************
 !
@@ -55,7 +55,7 @@
 !
 !????incompleted functions:
 ! 1--friction for DEM
-! 2--LBM
+! 2--IBM
 !*****************************************************************************************************************************************
 !    
 !
@@ -401,8 +401,11 @@
         end if
 !
 !.......Scaled gravity
-!	    gacce=9.81d0*dt/cc
+      if(BODYF.eq.1)then
+	      gacce=9.81d0*dt/cc
+      else
         gacce=0.d0
+      endif
         gacce1=(1.0d0-d0/ds)*9.81d0*dt/cc
 !        gacce1=0.d0
 !.......physical time
@@ -793,6 +796,8 @@
            call write_results1
            call write_spheres
            write(20,1006) istep, particle(1)%coor(1:3),particle(1)%U(1:3),particle(1)%F(1:3)
+           !.....calculate FLUID velocity at fluid nodes
+           call write_velocity(nx,ny,nz)
           endif
 
           write(21,1001) istep, particle(1)%coor(1:3)  
@@ -837,8 +842,6 @@
       end if
 !.......................................................
       if(LBM)then
-!.....calculate maximum velocity at fluid nodes
-        call write_velocity(nx,ny,nz)
 !.....calculate reynold number
         if(np.gt.0)then
           call comp_rey(visco,minrad,umax,cc,dx,dt)
@@ -942,7 +945,7 @@
       read(10,*) sam_prep2,lubrication,uniaxial
 !.....read if MRT (else is SRT/BGK), S1, 2, 4, 14 are relaxation value
       read(10,*) use_MRT
-      read(10,*) S1, S2, S4, S14
+      if(use_MRT) read(10,*) S1, S2, S4, S14
 !.....open particle parameter file      
       open(15,file='ballproperty.dat') 
 !
@@ -1223,7 +1226,8 @@ vertex(3,8)=zmax
           else if(bctype.eq.1)then
 !.........acceleration
             allocate(bc(1))
-            read(10,*) bc(1),bc_mode
+!            read(10,*) bc(1),bc_mode
+              read(10,*) periodic_flag,implement
 !.........type 2: specified pressure/density
           else if(bctype.eq.2)then
 !...........number of pressure edges 
@@ -1294,7 +1298,6 @@ vertex(3,8)=zmax
     use solid
     use fluid
     implicit none
-    
     !
     do k=1,nz
       do j=1,ny
@@ -1311,6 +1314,7 @@ vertex(3,8)=zmax
        ! comment later
        write(*,*) istep,ix,iy,iz,cell(ix,iy,iz)%num_p
     end do
+
 
     return
 	End subroutine
@@ -1560,7 +1564,11 @@ vertex(3,8)=zmax
         end do
       enddo
 
-!
+! body force driven periodic BCs
+    if (bctype.eq.1 .and. periodic_flag) then
+          print *, "body foce with periodic BC activated!"
+          return
+    end if
 
     if (bctype.eq.3) then
 
@@ -3547,137 +3555,137 @@ vertex(3,8)=zmax
 !
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     Subroutine  write_spheres
-    use system
-    use solid
-    use fluid
-    use fs_inter
-    implicit none
-      integer no_output,n0
-      real(8) x1,y1,z1,u2,rad
-	  save    no_output
-!
-    character(len=100) :: output_name,output_name2
-    character(len=20)  :: step_string
-    character(len=100) :: output_path,output_path2
-! for paraview files
-    write(step_string,'(I8.8)') istep
-    output_name = 'particles_' // trim(step_string) // '.vtp'
-    output_name2 = 'particles_' // trim(step_string) // '.csv'
-    output_path = 'paraview/' // trim(output_name)
-    output_path2 = 'paraview/' // trim(output_name2)
-! output each istep/file
-    write(99,'(A,I0,A,A,A)') '    <DataSet timestep="', istep, &
-         '" group="" part="0" file="', trim(output_name), '"/>'
+  use system
+  use solid
+  use fluid
+  use fs_inter
+  implicit none
+  integer no_output,n0
+  real(8) x1,y1,z1,u2,rad
+  save no_output
+  !
+  character(len=100) :: output_name,output_name2
+  character(len=20) :: step_string
+  character(len=100) :: output_path,output_path2
+  ! for paraview files
+  write(step_string,'(I8.8)') istep
+  output_name = 'particles_' // trim(step_string) // '.vtp'
+  output_name2 = 'particles_' // trim(step_string) // '.csv'
+  output_path = 'paraview/' // trim(output_name)
+  output_path2 = 'paraview/' // trim(output_name2)
+  ! output each istep/file
+  write(99,'(A,I0,A,A,A)') ' <DataSet timestep="', istep, &
+  '" group="" part="0" file="', trim(output_name), '"/>'
 
     open(unit=999,file=output_path,status='replace')
     !output csv file
 !    open(unit=9999,file=output_path2,status='replace')
 !    write(9999,'(A)') ' ID, X, Y, Z, Diameter, VX, VY, VZ, FX, FY, FZ'
 
+  ! ---- XML VTK PolyData file for particles ----
+  write(999,'(A)') '<?xml version="1.0"?>'
+  write(999,'(A)') '<VTKFile type="PolyData" version="0.1" byte_order="LittleEndian">'
+  write(999,'(A)') ' <PolyData>'
+  write(999,'(A,I0,A,I0,A)') ' <Piece NumberOfPoints="', np, '" NumberOfVerts="', np, &
+  '" NumberOfLines="0" NumberOfStrips="0" NumberOfPolys="0">'
 
+  ! ---- Point data: radius, velocity, hydrodynamic force ----
+  write(999,'(A)') ' <PointData Scalars="radius" Vectors="velocity">'
 
-! ---- XML VTK PolyData file for particles ----
-    write(999,'(A)') '<?xml version="1.0"?>'
-    write(999,'(A)') '<VTKFile type="PolyData" version="0.1" byte_order="LittleEndian">'
-    write(999,'(A)') '  <PolyData>'
-    write(999,'(A,I0,A,I0,A)') '    <Piece NumberOfPoints="', np, '" NumberOfVerts="', np, &
-         '" NumberOfLines="0" NumberOfStrips="0" NumberOfPolys="0">'
+  ! ---- Scalar: radius ----
+  write(999,'(A)') ' <DataArray type="Float64" Name="radius" NumberOfComponents="1" format="ascii">'
+  do i=1,np
+    write(999,'(ES24.16)') particle(i)%radius
+    write(9999,*) i, ",",particle(i)%coor(1),",",particle(i)%coor(2),",",particle(i)%coor(3),",",2.0*particle(i)%radius,",",particle(i)%U(1),",",particle(i)%U(2), &
+    ",",particle(i)%U(3),",",particle(i)%F(1),",",particle(i)%F(2),",",particle(i)%F(3)
+  end do
+  write(999,'(A)') ' </DataArray>'
 
-! ---- Point data: radius, velocity, hydrodynamic force ----
-    write(999,'(A)') '      <PointData Scalars="radius" Vectors="velocity">'
-
-! ---- Scalar: radius ----
-    write(999,'(A)') '        <DataArray type="Float64" Name="radius" NumberOfComponents="1" format="ascii">'
+  ! ---- Vector: Velocity ----
+  write(999,'(A)') ' <DataArray type="Float64" Name="velocity" NumberOfComponents="3" format="ascii">'
     do i=1,np
         write(999,'(ES24.16)') particle(i)%radius
 !        write(9999,*) i, ",",particle(i)%coor(1),",",particle(i)%coor(2),",",particle(i)%coor(3),",",2.0*particle(i)%radius,",",particle(i)%U(1),",",particle(i)%U(2), &
 !        ",",particle(i)%U(3),",",particle(i)%F(1),",",particle(i)%F(2),",",particle(i)%F(3)
     end do
-    write(999,'(A)') '        </DataArray>'
+  write(999,'(A)') ' </DataArray>'
 
-! ---- Vector: Velocity ----
-    write(999,'(A)') '        <DataArray type="Float64" Name="velocity" NumberOfComponents="3" format="ascii">'
+  ! ---- Vector: hydrodynamic force ----
+  write(999,'(A)') ' <DataArray type="Float64" Name="hydrodynamic_force" NumberOfComponents="3" format="ascii">'
     do i=1,np
-        write(999,'(3ES24.16)') particle(i)%U(1:3)
+    write(999,'(3ES24.16)') particle(i)%F(1:3)
     end do
-    write(999,'(A)') '        </DataArray>'
+  write(999,'(A)') ' </DataArray>'
 
-! ---- Vector: hydrodynamic force ----
-    write(999,'(A)') '        <DataArray type="Float64" Name="hydrodynamic_force" NumberOfComponents="3" format="ascii">'
+  write(999,'(A)') ' </PointData>'
+
+  ! ---- Points: particle centers ----
+  write(999,'(A)') ' <Points>'
+  write(999,'(A)') ' <DataArray type="Float64" NumberOfComponents="3" format="ascii">'
     do i=1,np
-        write(999,'(3ES24.16)') particle(i)%F(1:3)
+    write(999,'(3ES24.16)') particle(i)%coor(1:3)
     end do
-    write(999,'(A)') '        </DataArray>'
+  write(999,'(A)') ' </DataArray>'
+  write(999,'(A)') ' </Points>'
 
-    write(999,'(A)') '      </PointData>'
+  ! ---- Vertices: one vertex cell per particle ----
+  write(999,'(A)') ' <Verts>'
 
-! ---- Points: particle centers ----
-    write(999,'(A)') '      <Points>'
-    write(999,'(A)') '        <DataArray type="Float64" NumberOfComponents="3" format="ascii">'
-    do i=1,np
-        write(999,'(3ES24.16)') particle(i)%coor(1:3)
-    end do
-    write(999,'(A)') '        </DataArray>'
-    write(999,'(A)') '      </Points>'
-
-! ---- Vertices: one vertex cell per particle ----
-    write(999,'(A)') '      <Verts>'
-
-    write(999,'(A)') '        <DataArray type="Int32" Name="connectivity" format="ascii">'
+  write(999,'(A)') ' <DataArray type="Int32" Name="connectivity" format="ascii">'
     do i=0,np-1
-        write(999,'(I0)') i
+    write(999,'(I0)') i
     end do
-    write(999,'(A)') '        </DataArray>'
+  write(999,'(A)') ' </DataArray>'
 
-    write(999,'(A)') '        <DataArray type="Int32" Name="offsets" format="ascii">'
+  write(999,'(A)') ' <DataArray type="Int32" Name="offsets" format="ascii">'
     do i=1,np
-        write(999,'(I0)') i
+    write(999,'(I0)') i
     end do
-    write(999,'(A)') '        </DataArray>'
+  write(999,'(A)') ' </DataArray>'
 
-    write(999,'(A)') '      </Verts>'
+  write(999,'(A)') ' </Verts>'
 
-    write(999,'(A)') '    </Piece>'
-    write(999,'(A)') '  </PolyData>'
-    write(999,'(A)') '</VTKFile>'
+  write(999,'(A)') ' </Piece>'
+  write(999,'(A)') ' </PolyData>'
+  write(999,'(A)') '</VTKFile>'
 
     close(999)
 !    close(9999)
 
 
 
-    return
+
+  return
 
 
-  
 
-!.....Write header for postprocessing with TECPLOT software
+  !.....Write header for postprocessing with TECPLOT software
   if(first)then
-        no_output=1
-        write(34,*) 'TITLE = DE3D' 
-        write(34,*) 'VARIABLES = X, Y, Z, VV, Diameter' 
-!        write(11,*) 'ZONE T=',istep
-	      write(34,*) 'ZONE T="Step:',istep,'", I=',np, ', J=1, K=1'
-!       write(11,*) 'I=',np,'J=1, K=1'
-        write(34,*) "ZONETYPE=ORDERED, DATAPACKING=POINT"
-	else
-!	  write(11,*) 'ZONE T=',istep
-	      write(34,*) 'ZONE T="Step:',istep,'", I=',np, ', J=1, K=1'
-!        write(11,*) 'I=',np,'J=1, K=1'
-        write(34,*) "ZONETYPE=ORDERED, DATAPACKING=POINT"
-	endif
-!
-	do i=1,np
-		  u2=sqrt(particle(i)%U(1)**2+particle(i)%U(2)**2+particle(i)%U(3)**2)
-          write(34,110) particle(i)%coor(1:3),u2,2.0*particle(i)%radius
-	enddo
-!
-	first=.false.
-	!write(11,*)' DATASETAUXDATA TIME=" October 13, 2002, 8 A.M."'
-  110 format(8(1x,g10.4)) 
-  120 format(4(1x,i4)) 
-      return
-    End subroutine
+  no_output=1
+  write(34,*) 'TITLE = DE3D'
+  write(34,*) 'VARIABLES = X, Y, Z, VV, Diameter'
+  ! write(11,*) 'ZONE T=',istep
+  write(34,*) 'ZONE T="Step:',istep,'", I=',np, ', J=1, K=1'
+  ! write(11,*) 'I=',np,'J=1, K=1'
+  write(34,*) "ZONETYPE=ORDERED, DATAPACKING=POINT"
+  else
+  ! write(11,*) 'ZONE T=',istep
+  write(34,*) 'ZONE T="Step:',istep,'", I=',np, ', J=1, K=1'
+  ! write(11,*) 'I=',np,'J=1, K=1'
+  write(34,*) "ZONETYPE=ORDERED, DATAPACKING=POINT"
+  endif
+  !
+  do i=1,np
+  u2=sqrt(particle(i)%U(1)**2+particle(i)%U(2)**2+particle(i)%U(3)**2)
+  write(34,110) particle(i)%coor(1:3),u2,2.0*particle(i)%radius
+  enddo
+  !
+  first=.false.
+  !write(11,*)' DATASETAUXDATA TIME=" October 13, 2002, 8 A.M."'
+  110 format(8(1x,g10.4))
+  120 format(4(1x,i4))
+  return
+End subroutine
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !
 !
@@ -3727,6 +3735,11 @@ vertex(3,8)=zmax
         do j = 0, ny
             do i = 0, nx
                 call nodal_velocity(i,j,k,nx,ny,nz,ux,uy,uz,den)
+
+                if(BODYF.eq.1)then
+                  uy=uy-0.5d0*gacce
+                end if
+
                 velocity=sqrt(ux*ux+uy*uy+uz*uz)
                 if(umax.lt.velocity) umax=velocity
                 write(999,'(3ES24.16)') ux, uy, uz
@@ -4093,7 +4106,7 @@ vertex(3,8)=zmax
     use solid
     use fluid
     use fs_inter 
-    use MRT, only : MRT_collision
+    use MRT, only : MRT_collision, MRT_collision_body_forcing
     implicit none
 !    IMPLICIT DOUBLE PRECISION (A-H,O-Z)
 !    
@@ -4103,6 +4116,7 @@ vertex(3,8)=zmax
       real(8)::ex(14)=(/1,-1,0,0,0,0,1,-1,1,-1,1,-1,1,-1/)
       real(8)::ey(14)=(/0,0,1,-1,0,0,1,-1,1,-1,-1,1,-1,1/)
       real(8)::ez(14)=(/0,0,0,0,1,-1,1,-1,-1,1,1,-1,-1,1/)
+      real(8) Fx, Fy, Fz
       integer ixs,ixe,nn,ipr
 !
 ! write(*,*) "relaxation is working at the beginning"
@@ -4160,22 +4174,37 @@ vertex(3,8)=zmax
           if(use_MRT)then
 
             if(BODYF.eq.1)then
-              stop "ERROR: BODYF=1 is not implemented for MRT Relaxation yet"
-            end if
+              !stop "ERROR: BODYF=1 is not implemented for MRT Relaxation yet"
+              ! body force density and gravity in y-dir
+              Fx = 0.0d0
+              Fy = -den*gacce
+              Fz = 0.0d0
 
-            call MRT_collision(temp(:, ix, iy, iz), node(ix, iy, iz)%fdd, ux, uy, uz, den)
+              ! Note that guo forcing is already within this subroutine
+              call MRT_collision_body_forcing(temp(:,ix,iy,iz), &
+                                              node(ix,iy,iz)%fdd, &
+                                              ux,uy,uz,den, &
+                                              Fx,Fy,Fz)
+
+            else
+              ! Normal collision
+              call MRT_collision(temp(:, ix, iy, iz), node(ix, iy, iz)%fdd, ux, uy, uz, den)
+              
+            end if
 
           else
 
 	          call equilibrium_function(ux,uy,uz,den,feq)
+
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             if(BODYF.eq.1)then
               uy=uy-0.5*gacce
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	            call equilibrium_function(ux,uy,uz,den,feq)
             end if
+
+	        call equilibrium_function(ux,uy,uz,den,feq)
+
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!	        if(BODYF.eq.1) call body_force_density(ix,iy,iz,ux,uy,uz,den)
+	        if(BODYF.eq.1) call body_force_density(ix,iy,iz,ux,uy,uz,den)
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !write(*,*) rtao,feq
 !stop
@@ -4252,46 +4281,61 @@ vertex(3,8)=zmax
 !
 !
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
     Subroutine moving_particle_relaxation1(mode,ip,ix,iy,iz,nx,ny,nz,rtao,istep,ex,ey,ez)
     use solid,only:particle,gacce
     use fluid,only:node,temp,BODYF,fi_body
     use system, only: use_MRT
-    use MRT, only : MRT_collision
+    use MRT, only : MRT_collision, MRT_IMB_collision, MRT_collision_body_forcing, MRT_IMB_collision_body_forcing
     IMPLICIT DOUBLE PRECISION (A-H,O-Z)
       real(8) ex(14),ey(14),ez(14),u1,u2,u3
 !.....local variables
       integer  opposite_direction
       real(8)  feq(0:14),peq(0:14),par(4),vol
-      real(8)  f_mrt_post(0:14), delta_f
+      ! real(8)  f_mrt_post(0:14), delta_f
+      real(8)  os_mrt(0:14)
+      real(8) Fx, Fy, Fz
 !
 !.....Compute nodal density and velocities
       call nodal_velocity(ix,iy,iz,nx,ny,nz,ux,uy,uz,den)
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !            write(*,*) uy
-            if(BODYF.eq.1)then
-              uy=uy-0.5*gacce
-            end if
+      ! Get body force density
+      if(BODYF.eq.1)then
+
+        Fx=0.0d0
+        Fy=-den*gacce
+        Fz=0.0d0
+
+      else
+
+        Fx=0.0d0
+        Fy=0.0d0
+        Fz=0.0d0
+
+      end if
+
+
+      if(BODYF.eq.1 .and. .not.use_MRT)then
+        uy=uy-0.5*gacce
+      end if
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !.....Compute equilibrium function
-	  call equilibrium_function(ux,uy,uz,den,feq)
+      if(.not. use_MRT)then
+        call equilibrium_function(ux,uy,uz,den,feq)
+      end if
 !      write(*,*) den,feq
 !      stop
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !.....FOR MRT
       ! Note that currently feq and peq are from BGK equilibrium
       ! Perhaps a MRT version of equilibrium in vel space is needed to be fully consistnent for IMB
-      if(use_MRT)then
-        if(BODYF.eq.1)then
-          stop "Error: BODYF=1 not implemented for MRT IMB yet"
-        end if
+      ! This is done now
 
-        call MRT_collision(temp(:, ix, iy, iz), f_mrt_post, ux, uy, uz, den)
-
-      end if
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!	  if(BODYF.eq.1) call body_force_density(ix,iy,iz,ux,uy,uz,den)
+	  if(BODYF.eq.1 .and. .not.use_MRT) call body_force_density(ix,iy,iz,ux,uy,uz,den)
 !      write(*,*) BODYF,uy,fi_body(7)
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !.....Compute nodal area covered by particle
@@ -4314,43 +4358,74 @@ vertex(3,8)=zmax
         u1=particle(ip)%U(1)
         u2=particle(ip)%U(2)
         u3=particle(ip)%U(3)
-        call equilibrium_function(u1,u2,u3,den,peq)
 !        write(*,*) u1,u2,u3,den,peq
 !        stop
 ! 
-	    fx=0.d0
-	    fy=0.d0
-      fz=0.0d0
-	    fm=0.d0
-	    rx=ix-particle(ip)%coor(1)
-	    ry=iy-particle(ip)%coor(2)
-      rz=iz-particle(ip)%coor(3)
-        do i=0,14
+        fx=0.d0
+        fy=0.d0
+        fz=0.0d0
+        fm=0.d0
+        rx=ix-particle(ip)%coor(1)
+        ry=iy-particle(ip)%coor(2)
+        rz=iz-particle(ip)%coor(3)
+          
           if(use_MRT)then
-            delta_f = f_mrt_post(i) - temp(i,ix,iy,iz)
+              ! Fully MRT-space IMB:
+              ! m_eq_f = m_eq(rho, fluid velocity)
+              ! m_eq_p = m_eq(rho, particle velocity)
+              ! m_new  = m_post + B * (m_eq_p - m_eq_f)
 
-            os = delta_f + peq(i) - feq(i)
+                  if(BODYF.eq.1)then
+                    !.....MRT-IMB with body forcing
+                    call MRT_IMB_collision_body_forcing(              &
+                        temp(:,ix,iy,iz),                             &
+                        node(ix,iy,iz)%fdd,                           &
+                        os_mrt,                                       &
+                        ux,uy,uz,den,                                 &
+                        u1,u2,u3,B,                                   &
+                        Fx,Fy,Fz)
 
-            node(ix,iy,iz)%fdd(i) = f_mrt_post(i) + B*(peq(i)-feq(i))
+                  
+                  else
+                    !.....MRT-IMB without body forcing
+                    call MRT_IMB_collision(                           &
+                        temp(:,ix,iy,iz),                             &
+                        node(ix,iy,iz)%fdd,                           &
+                        os_mrt,                                       &
+                        ux,uy,uz,den,                                 &
+                        u1,u2,u3,B)
+
+                  end if
+
+              do i = 1, 14
+                fx = fx + os_mrt(i) * ex(i)
+                fy = fy + os_mrt(i) * ey(i)
+                fz = fz + os_mrt(i) * ez(i)
+              end do
           else
-            os=peq(i)-temp(i,ix,iy,iz)+(1.d0-rtao)*(temp(i,ix,iy,iz)-feq(i))
-    !         if(BODYF.eq.1)then
-    !           node(ix,iy)%fdd(i)=temp(i,ix,iy)+rtao*(1.d0-B)*(feq(i)-temp(i,ix,iy))+B*os+(1.0-B)*fi_body(i)
-      !        else
-                node(ix,iy,iz)%fdd(i)=temp(i,ix,iy,iz)+rtao*(1.d0-B)*(feq(i)-temp(i,ix,iy,iz))+B*os
-    !         end if
-          endif
-!.........Compute forces on particle
-          if(i.gt.0)then
-            fx=fx+os*ex(i)
-	        fy=fy+os*ey(i)
-          fz=fz+os*ez(i)
-! in the future do this torque	        fm=fm+fy*rx-fx*ry
-	        endif
-	      enddo
+            ! BGK IMB
+            call equilibrium_function(u1,u2,u3,den,peq)
+            do i=0,14
+
+              os=peq(i)-temp(i,ix,iy,iz)+(1.d0-rtao)*(temp(i,ix,iy,iz)-feq(i))
+               if(BODYF.eq.1)then
+                  node(ix,iy,iz)%fdd(i)=temp(i,ix,iy,iz)+rtao*(1.d0-B)*(feq(i)-temp(i,ix,iy,iz))+B*os+(1.0-B)*fi_body(i)
+                else
+                  node(ix,iy,iz)%fdd(i)=temp(i,ix,iy,iz)+rtao*(1.d0-B)*(feq(i)-temp(i,ix,iy,iz))+B*os
+               end if
+    !.........Compute forces on particle
+              if(i.gt.0)then
+              fx=fx+os*ex(i)
+              fy=fy+os*ey(i)
+              fz=fz+os*ez(i)
+    ! in the future do this torque	        fm=fm+fy*rx-fx*ry
+              endif
+            enddo
+      end if
+	      
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !	    if(mode.eq.1)then
-        particle(ip)%F(1)=particle(ip)%F(1)-B*fx
+      particle(ip)%F(1)=particle(ip)%F(1)-B*fx
 	    particle(ip)%F(2)=particle(ip)%F(2)-B*fy
 	    particle(ip)%F(3)=particle(ip)%F(3)-B*fz
 !      write(*,*) fx,fy,fz
@@ -4361,18 +4436,34 @@ vertex(3,8)=zmax
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !     zero volume
 	  else
-	    do i=0,14
         if ( use_MRT ) then
-          node(ix,iy,iz)%fdd(i) = f_mrt_post(i)
+          if(BODYF.eq.1)then
+
+            call MRT_collision_body_forcing(              &
+                 temp(:,ix,iy,iz),                        &
+                 node(ix,iy,iz)%fdd,                      &
+                 ux,uy,uz,den,                            &
+                 Fx,Fy,Fz)
+
+          else
+
+            call MRT_collision(                           &
+                 temp(:,ix,iy,iz),                        &
+                 node(ix,iy,iz)%fdd,                      &
+                 ux,uy,uz,den)
+
+          end if
+          ! node(ix,iy,iz)%fdd(i) = f_mrt_post(i)
         else
- !         if(BODYF.eq.1)then
-  !          node(ix,iy)%fdd(i)=temp(i,ix,iy)+rtao*(feq(i)-temp(i,ix,iy))+fi_body(i)
-  !        else
-            node(ix,iy,iz)%fdd(i)=temp(i,ix,iy,iz)+rtao*(feq(i)-temp(i,ix,iy,iz))
-  !        end if
+          do i=0,14
+            if(BODYF.eq.1)then
+              node(ix,iy,iz)%fdd(i)=temp(i,ix,iy,iz)+rtao*(feq(i)-temp(i,ix,iy,iz))+fi_body(i)
+            else
+                node(ix,iy,iz)%fdd(i)=temp(i,ix,iy,iz)+rtao*(feq(i)-temp(i,ix,iy,iz))
+            end if
+          enddo
         end if
-	    enddo
-	  endif
+	    endif
 	  return
 	End subroutine
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -4862,22 +4953,17 @@ vertex(3,8)=zmax
     Subroutine write_velocity(nx,ny,nz)
 	use fluid,only:node,temp,yb,BODYF
     use solid,only:gacce
+    use system,only:istep
     IMPLICIT DOUBLE PRECISION (A-H,O-Z)
 !
-  ix=nx
-	iy=ny/2
-	iz=nz/2
-
-      do i=0,14 
-        den=den+temp(i,ix,iy,iz)
-	    enddo
-      ux=(temp(1,ix,iy,iz)+temp(7,ix,iy,iz)+temp(9,ix,iy,iz) &
-       +temp(11,ix,iy,iz)+temp(13,ix,iy,iz) &
-       -(temp(2,ix,iy,iz)+temp(8,ix,iy,iz)+temp(10,ix,iy,iz) &
-       +temp(12,ix,iy,iz)+temp(14,ix,iy,iz)))/den
+    ix=nx/2
+	  iy=ny/2
+	  iz=nz/2
+      call nodal_velocity(ix,iy,iz,nx,ny,nz,ux,uy,uz,den)
+      write(13,100) istep,ix,iy,iz,ux,uy,uz
 !          if(umax.lt.uvelocity) umax=uvelocity
-   	  write(13,100) ix,iy,iz,ux
-  100     format(1x,i6,1x,i6,1x,i6,1x,g10.4)
+!   	  write(13,100) ix,iy,iz,ux,uy,uz
+  100     format(1x,i6,1x,i6,1x,i6,1x,i6,3(1x,g10.4))
       return
 	End subroutine
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -5006,3 +5092,93 @@ vertex(3,8)=zmax
 !	return
 !	End subroutine
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+Subroutine body_force_density(ix,iy,iz,ux,uy,uz,den)
+    use fluid, only : rtao,fi_body,w
+    use solid, only : gacce
+    implicit none
+
+    integer ix,iy,iz,i
+    real(8) den,ux,uy,uz
+    real(8) eiu(0:14),ei_u_f(0:14),eif(0:14)
+
+!.....calculate Ei dot U
+    eiu(0)  = 0.0d0
+
+!.....axis directions
+    eiu(1)  =  ux
+    eiu(2)  = -ux
+    eiu(3)  =  uy
+    eiu(4)  = -uy
+    eiu(5)  =  uz
+    eiu(6)  = -uz
+
+!.....diagonal directions
+    eiu(7)  =  ux + uy + uz
+    eiu(8)  = -ux - uy - uz
+    eiu(9)  =  ux + uy - uz
+    eiu(10) = -ux - uy + uz
+    eiu(11) =  ux - uy + uz
+    eiu(12) = -ux + uy - uz
+    eiu(13) =  ux - uy - uz
+    eiu(14) = -ux + uy + uz
+
+!.....calculate (Ei-U) dot F
+!.....F = (0,-den*gacce,0)
+
+!.....directions with Ey = 0
+    ei_u_f(0) = den*uy*gacce
+    ei_u_f(1) = den*uy*gacce
+    ei_u_f(2) = den*uy*gacce
+    ei_u_f(5) = den*uy*gacce
+    ei_u_f(6) = den*uy*gacce
+
+!.....directions with Ey = +1
+    ei_u_f(3)  = (1.0d0-uy)*(-den*gacce)
+    ei_u_f(7)  = (1.0d0-uy)*(-den*gacce)
+    ei_u_f(9)  = (1.0d0-uy)*(-den*gacce)
+    ei_u_f(12) = (1.0d0-uy)*(-den*gacce)
+    ei_u_f(14) = (1.0d0-uy)*(-den*gacce)
+
+!.....directions with Ey = -1
+    ei_u_f(4)  = (1.0d0+uy)*(den*gacce)
+    ei_u_f(8)  = (1.0d0+uy)*(den*gacce)
+    ei_u_f(10) = (1.0d0+uy)*(den*gacce)
+    ei_u_f(11) = (1.0d0+uy)*(den*gacce)
+    ei_u_f(13) = (1.0d0+uy)*(den*gacce)
+
+!.....calculate Ei dot F
+    eif(0) = 0.0d0
+
+!.....directions with Ey = 0
+    eif(1) = 0.0d0
+    eif(2) = 0.0d0
+    eif(5) = 0.0d0
+    eif(6) = 0.0d0
+
+!.....directions with Ey = +1
+    eif(3)  = -den*gacce
+    eif(7)  = -den*gacce
+    eif(9)  = -den*gacce
+    eif(12) = -den*gacce
+    eif(14) = -den*gacce
+
+!.....directions with Ey = -1
+    eif(4)  = den*gacce
+    eif(8)  = den*gacce
+    eif(10) = den*gacce
+    eif(11) = den*gacce
+    eif(13) = den*gacce
+
+!.....calculate Guo body-force contribution
+!.....For D3Q15: cs^2 = 1/3, so 1/cs^2 = 3 and 1/cs^4 = 9
+    do i=0,14
+        fi_body(i) = w(i)*(1.0d0-0.5d0*rtao) * &
+                     (3.0d0*ei_u_f(i) + 9.0d0*eiu(i)*eif(i))
+    end do
+
+    return
+End subroutine body_force_density

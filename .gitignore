@@ -1,0 +1,25 @@
+# Build directories
+build/
+cmake_build/
+
+# Executables
+BPLBM3D
+BPLBM3D_NEW
+
+# Fortran compiler output
+*.o
+*.mod
+*.smod
+
+# CMake-generated files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+
+# Editor and system files
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*~
