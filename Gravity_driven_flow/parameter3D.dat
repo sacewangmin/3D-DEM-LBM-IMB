@@ -1,4 +1,4 @@
-.true.   0  0   1.0d0   !LBM flag, turbulence model flag, flag for body force term, hydraulic radius ratio, 
+.true.   0  1   1.0d0   !LBM flag, turbulence model flag, flag for body force term, hydraulic radius ratio, 
 .false.  .true.  20    .false. !IBM,  IMB,  number of boundary points for IB, coarse-grid 
 .false.    .false.   .false.      !sam_prep2,  lubrication flag, uniaxial
 .false.  !MRT ; Relaxation values for MRT. S1 S2 S4 S14: 1.8d0 1.4d0 1.6d0 1.2d0 
@@ -15,10 +15,10 @@
 .false.        ! with or withoutbond
 5.1e7 90.0   ! bond parameters(normal stiffness, critical normal force and shear force)
 1.0e5  250.0  0.01     !bond shear stiffness and friction coef for bond  1.0e7
-100000 10 1000  ! total timestep    screen timestep   output timestep
+1000 10 100  ! total timestep    screen timestep   output timestep
 0      ! DEM boundary
-3            !boundary type  for LBM
-.true.    2   ! periodic? 0=no, 1=yes; implement method: 1 extra lay, 2 direct pass
+1            !boundary type  for LBM
+.true.    2   ! periodic 0=no, 1=yes; implement method: 1 extra lay, 2 direct pass
 0.005 0.005 ! 0.001  1
 
 

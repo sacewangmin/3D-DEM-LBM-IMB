@@ -1,8 +1,7 @@
 .true.   0  0   1.0d0   !LBM flag, turbulence model flag, flag for body force term, hydraulic radius ratio, 
 .false.  .true.  20   .false. !IBM,  IMB,  number of boundary points for IB, coarse-grid
 .false.    .false.   .false.      !sam_prep2,  lubrication flag, uniaxial
-.false.  !MRT
-1.8d0 1.4d0 1.6d0 1.2d0  ! Relaxation values for MRT. S1 S2 S4 S14 
+.false.  !MRT ; Relaxation values for MRT. S1 S2 S4 S14: 1.8d0 1.4d0 1.6d0 1.2d0  
 
 0.1 0.16  0.1
 0.001		!dx
