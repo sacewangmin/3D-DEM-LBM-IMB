@@ -13,9 +13,12 @@
 !            It includes DEM, BPM, LBM and Their coupling schemes.
 !
 !
-!  Modified by: Anders Bahrami
+!  Modified by: 
+!               Anders Bahrami
 !               
-!            1) Velocity and Periodic Boundary conditions, May 2026
+!            1) Velocity and periodic boundary conditions for LBM, May 2026
+!            2) Fixed moving particles flag, Jun 2026
+!            3) Periodic boundary conditions for DEM, Jun 2026
 !
 !               Ryan Nguyen
 !
@@ -78,8 +81,10 @@
 !===== for coarse-grid LBM-DEM coupled by empirical equations
       logical empirical
 !=====
-!.....flags for periodic boundary (only used if bctype=3)
+!.....flag for periodic boundary (only used if bctype=3)
       logical periodic_flag
+!.....flag for fixed moving particles
+      logical fixed_particles_flag
 !.....flag for MRT
       logical use_MRT
 !.....Relaxation values for MRT
@@ -139,6 +144,8 @@
       type(datalink),pointer::p1,p2,head_le0,head_le1
 !.....head_lps,head_lpm are heads for stationary and moving particles lists
       type(datalink),pointer::head_lps,head_lpm
+!.....head_lpx_ghost are heads for stationary moving particles lists used in periodic boundary condition (i.e. moving particles that are fixed in place to compute body force)
+      ! type(datalink),pointer::head_lpx_ghost
 !.....coordinate list of stationary particle nodes,moving particle interior nodes,moving boundary nodes and fluid boundary nodes
 !.....fixed wall boundary nodes,non-fixed wall boundary nodes, p3 is temporary pointer
       type(datalink2),pointer::head_lns,p3
@@ -149,7 +156,11 @@
     Module solid
     implicit none
 !.....number of particles, number of stationary and moving particles
-      integer np,ns,nm      
+      integer np,ns,nm
+!.....number of fixed ghost particles
+      integer nfgp !ngp
+!.....list of fixed ghost particles indices
+      integer,allocatable::gpl(:)
 !.....number of maximum contact, contact number for each particle ,  it used for loop structure    
       integer mcnts,ntar,it
 !.....solid densities
@@ -249,6 +260,7 @@
 !
       type(bound_pts),allocatable::bpoint(:,:)
       type(par_prop),allocatable::particle(:)
+      type(par_prop),allocatable::ghost_particle(:)
       type(part_virtual),allocatable::part_vir(:)
 !
     End module solid
@@ -700,14 +712,15 @@
             loopinner: do isub=1,nsub
 !.............Check if all the moving particles are deactivated
 !	          i=inactive_particle()
-              if(inactive_particle().eq.nm)then
+
+              if(inactive_particle().eq.nm .and. .not.periodic_flag)then
 	            write(*,*) 'ALL the moving particles have been deactivated!'
 	            exit loopmain
 	            endif
 !.............Perform contact detection and compute contact forces
-	            if(nm.ge.1)call contact_main
+	            ! if(nm.ge.1)call contact_main
 !.............Update moving particle velocity and position
-	            call update_moving_particle_position(nm,dtime,gacce1,vmax,isub)
+	            if (.not.fixed_particles_flag) call update_moving_particle_position(nm,dtime,gacce1,vmax,isub)
 !.............update boundary bounding box
 !             call boundary_boundingbox(ne0,le0,le1,ne1,edge,vertex,np,dx,icoor)
 !              if(empirical .and. istep==1) exit
@@ -716,7 +729,7 @@
             if(IMB)then
 !.............Update moving particle boundary and interior node list
 !              write(*,*) "IMB", istep 
-              call update_moving_particle_nodes
+              if (.not.fixed_particles_flag) call update_moving_particle_nodes
 !.............Update moving particle fluid boundary nodes list
 !!!	          call update_fluid_boundary_nodes
 !              write(*,*) "nodes", istep 
@@ -730,7 +743,7 @@
 !----------------
             if(nm.ge.1)call contact_main
 !...........Update moving particle velocity and position
-	        call update_moving_particle_position(nm,dtime,gacce,vmax,isub)
+	          call update_moving_particle_position(nm,dtime,gacce,vmax,isub)
 !...........update boundary bounding box
 !            call update_wall_position    
 !----------------   
@@ -750,7 +763,7 @@
                 node(k,j,i)%body_fs=0.0d0
               enddo
             enddo
-            end do
+            enddo
           end if
 !===== coarse-grid LBM-DEM: to get hydro force on particles and body force at nodes
           if(empirical) call empirical_force
@@ -872,6 +885,7 @@
 !-----------------------------------------------------------------------------------------------
 !.....Deallocate spaces 
      deallocate(particle)
+    !  deallocate(ghost_particle)
      deallocate(laccoc,laccop,icoor,xb,yb,pre_ft,pre_ft1,laccot)
      if(boundary_dem==1) deallocate(part_vir)
 
@@ -892,6 +906,8 @@
      if(ns.gt.0) deallocate(head_lps)
      if(nm.gt.0) deallocate(head_lpm)
      if(nos.gt.0) deallocate(head_lns)
+
+    !  if(ns.gt.0) deallocate(head_lps_ghost)
 !------------------------------------------------------------------------------------------------
 !
 !.....simulation end
@@ -1087,6 +1103,7 @@ vertex(3,8)=zmax
         read(10,*) np
 !.......allocate memory for particle array
         allocate(particle(np))
+        if (periodic_flag) allocate(ghost_particle(np))
 !.......particle nromal penalty, damping ratio and timestep factor
         read(10,*) kn,kt,damp_option,damp_coef,factor
 !.......friction option, friction coefficient
@@ -1223,11 +1240,16 @@ vertex(3,8)=zmax
 !.........type 0: all wall fixed boundary condition
           if(bctype.eq.0)then
 !.........type 1: periodic boundary condition
+            allocate(bc(2))
+            read(10,*) periodic_flag,implement
+            read(10,*) fixed_particles_flag
+            read(10,*) bc(1),bc(2)
           else if(bctype.eq.1)then
 !.........acceleration
             allocate(bc(1))
 !            read(10,*) bc(1),bc_mode
               read(10,*) periodic_flag,implement
+              read(10,*) fixed_particles_flag
 !.........type 2: specified pressure/density
           else if(bctype.eq.2)then
 !...........number of pressure edges 
@@ -1242,6 +1264,7 @@ vertex(3,8)=zmax
           else if(bctype.eq.3) then
             allocate(bc(2))
             read(10,*) periodic_flag,implement
+            read(10,*) fixed_particles_flag
             read(10,*) bc(1),bc(2)
 	      endif          
 !
@@ -1874,6 +1897,7 @@ vertex(3,8)=zmax
 !.....local variables
       integer  xl,xr,yl,yr,zl,zr,deltax,deltay,deltaz
       real(8) radius2
+      integer ix2,iy2,iz2
 !
       nos=0
 	    p1=>head_lps
@@ -1893,14 +1917,23 @@ vertex(3,8)=zmax
 	          deltay=iy-particle(ip)%coor(2)
             deltaz=iz-particle(ip)%coor(3)
 	if((deltax*deltax+deltay*deltay+deltaz*deltaz).le.radius2)then
-	          node(ix,iy,iz)%obst=1
+            ix2 = ix
+            iy2 = iy
+            iz2 = iz
+            if (periodic_flag) then
+                if (ix.lt.0 .or. ix.gt.nx) cycle
+                if (iy.lt.0 .or. iy.gt.ny) iy2=mod(iy,ny+1)
+                if (iz.lt.0 .or. iz.gt.nz) iz2=mod(iz,nz+1)
+            end if
+
+	          node(ix2,iy2,iz2)%obst=1
 	          nos=nos+1
 !.............form the list using pointer..............	          
             if(nos.eq.1)then
                 allocate(head_lns)
-                head_lns%coord(1)=ix
-                head_lns%coord(2)=iy
-                head_lns%coord(3)=iz
+                head_lns%coord(1)=ix2
+                head_lns%coord(2)=iy2
+                head_lns%coord(3)=iz2
                 nullify(head_lns%next)
                 p3=>head_lns
             else
@@ -1910,9 +1943,9 @@ vertex(3,8)=zmax
                   stop
                 end if
                 p3=>p3%next
-                p3%coord(1)=ix
-                p3%coord(2)=iy
-                p3%coord(3)=iz
+                p3%coord(1)=ix2
+                p3%coord(2)=iy2
+                p3%coord(3)=iz2
                 nullify(p3%next)
             end if                       
 !.......................................................              
@@ -1952,6 +1985,7 @@ vertex(3,8)=zmax
     use fs_inter
     implicit none       
 !      integer nnb,nni
+      integer igp,add1
 !
       noi=0
 	    nni=0
@@ -1960,10 +1994,36 @@ vertex(3,8)=zmax
       nof=0
       nnf=0
 !
+      ! igp=1
+      ! add1=0
+      ! allocate(gpl(np))
       p1=>head_lpm
       do while(.true.)
         ip=p1%num
         if(particle(ip)%active==0)goto 100
+
+        ! if (periodic_flag .and. fixed_particles_flag) then
+        !   ! if (particle(ip)%coor(1)<0.0d0 .or. particle(ip)%coor(1)>nx) then
+        !   !   ghost_particle(igp)%coor(1) = mod(particle(ip)%coor(1),nx+1)
+        !   !   add1=1
+        !   ! end if
+        !   if (particle(ip)%coor(2)<0.0d0 .or. particle(ip)%coor(2)>ny) then
+        !     gpl(igp)=ip
+        !     ghost_particle(ip)=particle(ip)
+        !     ghost_particle(ip)%coor(2) = mod(particle(ip)%coor(2),ny+1)
+        !     add1=1
+        !   end if
+        !   if (particle(ip)%coor(3)<0.0d0 .or. particle(ip)%coor(3)>nz) then
+        !     gpl(igp)=ip
+        !     ghost_particle(ip)=particle(ip)
+        !     ghost_particle(ip)%coor(3) = mod(particle(ip)%coor(3),nz+1)
+        !     add1=1
+        !   end if
+        !   igp=igp+add1
+        !   add1=0
+        !   call nodes_of_moving_ghost_particles(ip)
+        ! end if
+
         call nodes_of_moving_particles(ip)
 !.......number of boundary nodes for current particle
 	    particle(ip)%nb=nob-nnb
@@ -1981,6 +2041,10 @@ vertex(3,8)=zmax
 100        if(.not. associated(p1%next)) exit
         p1=>p1%next
       end do
+
+      ! nfgp=igp-1
+      ! gpl=gpl(1:nfgp)
+
 !      write(*,*) 	    nni, nob, nnb, nof, nnf
 ! stop
       return
@@ -1990,7 +2054,7 @@ vertex(3,8)=zmax
 !
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 	Subroutine nodes_of_moving_particles(ip)
-    use system,only:istep
+    use system,only:istep,periodic_flag
     use solid
     use fluid,only:nx,ny,nz,lni,lnb,lnf,node
     use fs_inter,only:noi,nob,nof
@@ -1999,7 +2063,10 @@ vertex(3,8)=zmax
 !      real(8) xc,yc,rad,rad2
 !.....local variables
       integer lb(3,50000),l0(3,14),xl,xr,yf,yb,zu,zd,x,y,z
-      integer  ip,direction,current,inside_particle,NNN
+      integer ip,direction,current,inside_particle,NNN, count1,count2,count3
+      count1=0
+      count2=0
+      count3=0
 !
 !.....Particle paramters
 	  xc=particle(ip)%coor(1)
@@ -2018,50 +2085,56 @@ vertex(3,8)=zmax
 !.....modification
     if(ixmax>nx) ixmax=nx
 
-	  iymin=yc-rad
+
+	  iymin=floor(yc-rad)
 !.....modification
-    if(iymin<0) iymin=0
+    if(.not.periodic_flag .and. iymin<0) iymin=0
 
 	  dy=yc+rad
-	  iymax=dy
+	  iymax=floor(dy)
 	  if(iymax*1.d0.lt.dy)iymax=iymax+1
 !.....modification
-    if(iymax>ny) iymax=ny
+    if(.not.periodic_flag .and. iymax>ny) iymax=ny
 
-	  izmin=zc-rad
+	  izmin=floor(zc-rad)
 !.....modification
-    if(izmin<0) izmin=0
+    if(.not.periodic_flag .and. izmin<0) izmin=0
 
 	  dz=zc+rad
-	  izmax=dz
+	  izmax=floor(dz)
 	  if(izmax*1.d0.lt.dz)izmax=izmax+1
 !.....modification
-    if(izmax>nz) izmax=nz
+    if(.not.periodic_flag .and. izmax>nz) izmax=nz
 
 !.....min and max of the inner cuboid of the sphere
       a=0.577d0*rad
-	    ixmi=xc-a
+	    ixmi=floor(xc-a)
       if(ixmi<0) ixmi=0
-	    iymi=yc-a
-      if(iymi<0) iymi=0
-	    izmi=zc-a
-      if(izmi<0) izmi=0
-	    ixma=xc+a
+	    iymi=floor(yc-a)
+      if(.not.periodic_flag .and. iymi<0) iymi=0
+	    izmi=floor(zc-a)
+      if(.not.periodic_flag .and. izmi<0) izmi=0
+
+	    ixma=floor(xc+a)
       if(ixma>nx) ixma=nx
-	    iyma=yc+a
-      if(iyma>ny) iyma=ny
-	    izma=zc+a
-      if(izma>nz) izma=nz
+	    iyma=floor(yc+a)
+      if(.not.periodic_flag .and. iyma>ny) iyma=ny
+	    izma=floor(zc+a)
+      if(.not.periodic_flag .and. izma>nz) izma=nz
 
 !.....Find the interior nodes
     do iz=izmi+1, izma-1
 	    do iy=iymi+1, iyma-1
         do ix=ixmi+1, ixma-1
-	        node(ix,iy,iz)%obst=3
+          iy2=iy
+          iz2=iz
+          if(iy<0.or.iy>ny) iy2=modulo(iy,ny+1)
+          if(iz<0.or.iz>nz) iz2=modulo(iz,nz+1)
+	        node(ix,iy2,iz2)%obst=3
 	        noi=noi+1
 	        lni(1,noi)=ix
-	        lni(2,noi)=iy
-   	      lni(3,noi)=iz
+	        lni(2,noi)=iy2
+   	      lni(3,noi)=iz2
         enddo
       enddo
     enddo
@@ -2071,17 +2144,22 @@ vertex(3,8)=zmax
 	do iz=izmin, izmax
 	  do iy=iymin, iymax
 	    do ix=ixmin, ixmax
-	      if(node(ix,iy,iz)%obst.eq.3) cycle
+        iy2=iy
+        iz2=iz
+        if(iy<0.or.iy>ny) iy2=modulo(iy,ny+1)
+        if(iz<0.or.iz>nz) iz2=modulo(iz,nz+1)
+	      if(node(ix,iy2,iz2)%obst.eq.3) cycle
 	      if(inside_particle(ix,iy,iz,xc,yc,zc,rad2)==1)then
-	        node(ix,iy,iz)%obst=2
+	        node(ix,iy2,iz2)%obst=2
 	        nb=nb+1
 	        lb(1,nb)=ix
-	        lb(2,nb)=iy
-   	      lb(3,nb)=iz
+	        lb(2,nb)=iy2
+   	      lb(3,nb)=iz2
 	       endif
       enddo
     enddo
   end do
+
 !      open(10002,file='Particle_nodes_list.txt')      
 !      do i=1,nb
 !        write(10002,*) i, lb(1:3,i)
@@ -2095,6 +2173,9 @@ vertex(3,8)=zmax
 	  ix=lb(1,i)
 	  iy=lb(2,i)
 	  iz=lb(3,i)
+    ! print *, modulo(0,ny+1)
+    if(iy<0.or.iy>ny) iy=modulo(iy,ny+1)
+    if(iz<0.or.iz>nz) iz=modulo(iz,nz+1)
 	  if(node(ix,iy,iz)%obst.eq.4.or.node(ix,iy,iz)%obst.eq.3)goto 30
 !.......neighbour nodes check
       xr=ix+1
@@ -2131,6 +2212,8 @@ vertex(3,8)=zmax
 	        x=l0(1,j)
 	        y=l0(2,j)
 	        z=l0(3,j)
+          if(y<0.or.y>ny) y=modulo(y,ny+1)
+          if(z<0.or.z>nz) z=modulo(z,nz+1)
 	        node(x,y,z)%obst=4
 	        nof=nof+1
 	        lnf(1,nof)=x
@@ -2168,18 +2251,21 @@ vertex(3,8)=zmax
 !**********************************************************************
     use fluid,only:nx,ny,nz,node
     implicit none     
-    integer  l0(3,14),n0,n4,NNN,ix,iy,iz
+    integer  l0(3,14),n0,n4,NNN,ix,iy,iz,iy2,iz2
 !
-
-      if(ix<0.or.ix>nx .or. iy<0.or.iy>ny .or. iz<0.or.iz>nz) goto 30
+      iy2=iy
+      iz2=iz
+      if(ix<0.or.ix>nx) goto 30 ! .or. iy<0.or.iy>ny .or. iz<0.or.iz>nz
+      if(iy<0.or.iy>ny) iy2=modulo(iy,ny+1)
+      if(iz<0.or.iz>nz) iz2=modulo(iz,nz+1)
       NNN=NNN+1
-	    if(node(ix,iy,iz)%obst.eq.0)then
+	    if(node(ix,iy2,iz2)%obst.eq.0)then
 	      n0=n0+1
 	      l0(1,n0)=ix
-	      l0(2,n0)=iy
-	      l0(3,n0)=iz
+	      l0(2,n0)=iy2
+	      l0(3,n0)=iz2
 !          write(*,*) ix,iy,iz,node(ix,iy,iz)%obst
-	    else if(node(ix,iy,iz)%obst.eq.4)then
+	    else if(node(ix,iy2,iz2)%obst.eq.4)then
 	      n4=n4+1
 !          write(*,*) ix,iy,iz,node(ix,iy,iz)%obst
 	    endif
@@ -3394,7 +3480,7 @@ vertex(3,8)=zmax
 !
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 	Subroutine update_moving_particle_position(nm,dt,ga,vmax,isub)
-    use system,only:p1,head_lpm,vertex
+    use system,only:p1,head_lpm,vertex,xmax,ymax,zmax
     use solid,only:particle,boundary_dem,part_vir,num_vir
     IMPLICIT DOUBLE PRECISION (A-H,O-Z)
     integer isub
@@ -3406,13 +3492,13 @@ vertex(3,8)=zmax
 	G(2)=-ga
 	vmax=0.0d0
 !...for periodic boundary in X direction
-    if(boundary_dem==1)then
-    num_vir=0
-    do i=1,np
-      part_vir(i)%coor=0.0d0
-      part_vir(i)%radius=0.0d0
-    end do
-    end if
+    ! if(boundary_dem==1)then
+    ! num_vir=0
+    ! do i=1,np
+    !   part_vir(i)%coor=0.0d0
+    !   part_vir(i)%radius=0.0d0
+    ! end do
+    ! endif???
 !
   !   if(nm.eq.1)then
 	!   do j=1,6
@@ -3444,38 +3530,49 @@ vertex(3,8)=zmax
 !.......Update particle position
 !        do j=1,2
           particle(ip)%coor(1)=particle(ip)%coor(1)+particle(ip)%U(1)*dt
-! periodic in X direction
-          if(boundary_dem==1)then
-            if(particle(ip)%coor(1)>vertex(1,2))then
-              particle(ip)%coor(1)=particle(ip)%coor(1)-vertex(1,2)
-            else if(particle(ip)%coor(1)<=vertex(1,1))then
-              particle(ip)%coor(1)=particle(ip)%coor(1)+vertex(1,2)
-            else
-            endif
-          end if
           particle(ip)%coor(2)=particle(ip)%coor(2)+particle(ip)%U(2)*dt
           particle(ip)%coor(3)=particle(ip)%coor(3)+particle(ip)%U(3)*dt
+! periodic on XY and XZ planes, but not on X direction
+          if(boundary_dem==1)then
+            ! if(particle(ip)%coor(1)>vertex(1,2))then
+            !   particle(ip)%coor(1)=particle(ip)%coor(1)-vertex(1,2)
+            ! else if(particle(ip)%coor(1)<=vertex(1,1))then
+            !   particle(ip)%coor(1)=particle(ip)%coor(1)+vertex(1,2)
+            ! else
+            ! endif
+              ! update physical position
+              ! ! X direction
+              ! if(particle(ip)%coor(1)>nx) particle(ip)%coor(1)=particle(ip)%coor(1)-xmax-1
+              ! if(particle(ip)%coor(1)<0) particle(ip)%coor(1)=particle(ip)%coor(1)+xmax+1
+              ! Y direction
+              if(particle(ip)%coor(2)>ymax) particle(ip)%coor(2)=particle(ip)%coor(2)-(ymax+1)
+              if(particle(ip)%coor(2)<0) particle(ip)%coor(2)=particle(ip)%coor(2)+(ymax+1)
+              ! Z direction
+              if(particle(ip)%coor(3)>zmax) particle(ip)%coor(3)=particle(ip)%coor(3)-(zmax+1)
+              if(particle(ip)%coor(3)<0) particle(ip)%coor(3)=particle(ip)%coor(3)+(zmax+1)
+          end if
+          
 !        enddo
 !         write(*,*) isub,particle(ip)%U(:)      
 !         if(isub==5) stop
-!..........sort out virtual particles for output
-           if(boundary_dem==1)then
-!............if exceed right
-             if( (particle(ip)%coor(1)+particle(ip)%radius).gt.vertex(1,2) )then
-               num_vir=num_vir+1
-               part_vir(num_vir)%coor(1)=particle(ip)%coor(1)-vertex(1,2)
-               part_vir(num_vir)%coor(2)=particle(ip)%coor(2)
-               part_vir(num_vir)%coor(3)=particle(ip)%coor(3)
-               part_vir(num_vir)%radius=particle(ip)%radius
-!............if exceed left
-             else if( (particle(ip)%coor(1)-particle(ip)%radius).lt.vertex(1,1) )then
-               num_vir=num_vir+1
-               part_vir(num_vir)%coor(1)=particle(ip)%coor(1)+vertex(1,2)
-               part_vir(num_vir)%coor(2)=particle(ip)%coor(2)
-               part_vir(num_vir)%coor(3)=particle(ip)%coor(3)
-               part_vir(num_vir)%radius=particle(ip)%radius
-             end if
-           end if
+! !..........sort out virtual particles for output
+!            if(boundary_dem==1)then
+! !............if exceed right
+!              if( (particle(ip)%coor(1)+particle(ip)%radius).gt.vertex(1,2) )then
+!                num_vir=num_vir+1
+!                part_vir(num_vir)%coor(1)=particle(ip)%coor(1)-vertex(1,2)
+!                part_vir(num_vir)%coor(2)=particle(ip)%coor(2)
+!                part_vir(num_vir)%coor(3)=particle(ip)%coor(3)
+!                part_vir(num_vir)%radius=particle(ip)%radius
+! !............if exceed left
+!              else if( (particle(ip)%coor(1)-particle(ip)%radius).lt.vertex(1,1) )then
+!                num_vir=num_vir+1
+!                part_vir(num_vir)%coor(1)=particle(ip)%coor(1)+vertex(1,2)
+!                part_vir(num_vir)%coor(2)=particle(ip)%coor(2)
+!                part_vir(num_vir)%coor(3)=particle(ip)%coor(3)
+!                part_vir(num_vir)%radius=particle(ip)%radius
+!              end if
+!            end if
 !
  100       if(.not. associated(p1%next)) exit
         p1=>p1%next
@@ -3596,15 +3693,15 @@ vertex(3,8)=zmax
   write(999,'(A)') ' <DataArray type="Float64" Name="radius" NumberOfComponents="1" format="ascii">'
   do i=1,np
     write(999,'(ES24.16)') particle(i)%radius
-    write(9999,*) i, ",",particle(i)%coor(1),",",particle(i)%coor(2),",",particle(i)%coor(3),",",2.0*particle(i)%radius,",",particle(i)%U(1),",",particle(i)%U(2), &
-    ",",particle(i)%U(3),",",particle(i)%F(1),",",particle(i)%F(2),",",particle(i)%F(3)
+    ! write(9999,*) i, ",",particle(i)%coor(1),",",particle(i)%coor(2),",",particle(i)%coor(3),",",2.0*particle(i)%radius,",",particle(i)%U(1),",",particle(i)%U(2), &
+    ! ",",particle(i)%U(3),",",particle(i)%F(1),",",particle(i)%F(2),",",particle(i)%F(3)
   end do
   write(999,'(A)') ' </DataArray>'
 
   ! ---- Vector: Velocity ----
   write(999,'(A)') ' <DataArray type="Float64" Name="velocity" NumberOfComponents="3" format="ascii">'
     do i=1,np
-        write(999,'(ES24.16)') particle(i)%radius
+        write(999,'(ES24.16)') particle(i)%U(1:3)
 !        write(9999,*) i, ",",particle(i)%coor(1),",",particle(i)%coor(2),",",particle(i)%coor(3),",",2.0*particle(i)%radius,",",particle(i)%U(1),",",particle(i)%U(2), &
 !        ",",particle(i)%U(3),",",particle(i)%F(1),",",particle(i)%F(2),",",particle(i)%F(3)
     end do
@@ -3614,6 +3711,7 @@ vertex(3,8)=zmax
   write(999,'(A)') ' <DataArray type="Float64" Name="hydrodynamic_force" NumberOfComponents="3" format="ascii">'
     do i=1,np
     write(999,'(3ES24.16)') particle(i)%F(1:3)
+    print *, particle(i)%F(1:3)
     end do
   write(999,'(A)') ' </DataArray>'
 
@@ -3624,6 +3722,7 @@ vertex(3,8)=zmax
   write(999,'(A)') ' <DataArray type="Float64" NumberOfComponents="3" format="ascii">'
     do i=1,np
     write(999,'(3ES24.16)') particle(i)%coor(1:3)
+    print *, "coords:", particle(i)%coor(:)
     end do
   write(999,'(A)') ' </DataArray>'
   write(999,'(A)') ' </Points>'
@@ -3728,7 +3827,7 @@ End subroutine
 ! -------------------------
 ! Write nodal velocity data
 ! -------------------------
-    write(999,'(A)') '      <PointData Vectors="velocity">'
+    write(999,'(A)') '      <PointData Vectors="velocity" Scalars="obstacle">'
     write(999,'(A)') '        <DataArray type="Float64" Name="velocity" NumberOfComponents="3" format="ascii">'
 
     do k = 0, nz
@@ -3743,6 +3842,18 @@ End subroutine
                 velocity=sqrt(ux*ux+uy*uy+uz*uz)
                 if(umax.lt.velocity) umax=velocity
                 write(999,'(3ES24.16)') ux, uy, uz
+            end do
+        end do
+    end do
+
+    write(999,'(A)') '        </DataArray>'
+    
+    write(999,'(A)') '        <DataArray type="Int8" Name="obstacle" NumberOfComponents="1" format="ascii">'
+
+    do k = 0, nz
+        do j = 0, ny
+            do i = 0, nx
+                write(999,'(I8)') node(i,j,k)%obst
             end do
         end do
     end do
@@ -3864,6 +3975,9 @@ End subroutine
     implicit none       
 !      integer nnb,nni
 !      write(*,*) noi, nob, nof
+
+      ! node(:,:,:)%obst=0
+
 !.....Release old nodes in obst
       do i=1,noi
 	    ix=lni(1,i)
@@ -3885,6 +3999,14 @@ End subroutine
         iz=lnf(3,i)
 	      node(ix,iy,iz)%obst=0
       end do
+
+      ! do ix=0,nx
+      !   do iy=0,ny
+      !     do iz=0,nz
+      !       if (node(ix,iy,iz)%obst .ne. 0) print *, "woot!", ix, iy, iz, node(ix,iy,iz)%obst
+      !     enddo
+      !   enddo
+      ! enddo
 !      write(*,*) "nof"
 !.....Get new nodes
       noi=0
@@ -4091,10 +4213,11 @@ End subroutine
 !        stop
 	  dx=x-xc
 	  dy=y-yc
-	  dz=z-zc  
+	  dz=z-zc
 	  if(dx*dx+dy*dy+dz*dz.le.rad2) M=M+1
 	enddo
 	vol=M*1.d0/N
+  vol=0.2
       return
     End subroutine
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -4118,6 +4241,9 @@ End subroutine
       real(8)::ez(14)=(/0,0,0,0,1,-1,1,-1,-1,1,1,-1,-1,1/)
       real(8) Fx, Fy, Fz
       integer ixs,ixe,nn,ipr
+      integer obst_count(0:4)
+
+      obst_count=0
 !
 ! write(*,*) "relaxation is working at the beginning"
 !.....Initialise force vector
@@ -4148,6 +4274,26 @@ End subroutine
       end do
 !      write(*,*) "now=",now0
 !      stop
+!.....Loop over fixed moving particle nodes
+      if (nm.gt.0 .and. fixed_particles_flag) then
+          do i=1,noi
+            ix=lni(1,i)
+            iy=lni(2,i)
+            iz=lni(3,i)
+            do j=0,14
+             node(ix,iy,iz)%fdd(j)=temp(j,ix,iy,iz)
+	          enddo
+          end do
+    !      write(*,*) "noi"
+          do i=1,nob
+            ix=lnb(1,i)
+            iy=lnb(2,i)
+            iz=lnb(3,i)
+            do j=0,14
+             node(ix,iy,iz)%fdd(j)=temp(j,ix,iy,iz)
+	          enddo
+          end do
+      end if
 !.....Loop over stationary particle nodes
       if (ns.gt.0)then
         p3=>head_lns
@@ -4157,7 +4303,7 @@ End subroutine
           iz=p3%coord(3)   
           do j=0,14
              node(ix,iy,iz)%fdd(j)=temp(j,ix,iy,iz)
-	      enddo
+	        enddo
           if(.not. associated(p3%next)) exit
           p3=>p3%next
         end do
@@ -4168,7 +4314,8 @@ End subroutine
 !	    ixs=yb(1,iy)
 !	    ixe=yb(2,iy)
 	      do ix=0,nx
-	      if(node(ix,iy,iz)%obst.eq.0)then
+          if (node(ix,iy,iz)%obst.ne.0) obst_count(node(ix,iy,iz)%obst) = obst_count(node(ix,iy,iz)%obst) + 1 !print *, node(ix,iy,iz)%obst,ix,iy,iz
+	      if(node(ix,iy,iz)%obst.eq.0 .or. (fixed_particles_flag .and. node(ix,iy,iz)%obst.eq.4))then
 	        call nodal_velocity(ix,iy,iz,nx,ny,nz,ux,uy,uz,den)
 
           if(use_MRT)then
@@ -4239,7 +4386,7 @@ End subroutine
 	        ix=lnb(1,ipr+j)
 	        iy=lnb(2,ipr+j)
           iz=lnb(3,ipr+j)
-	        call moving_particle_relaxation1(0,ip,ix,iy,iz,nx,ny,nz,rtao,istep,ex,ey,ez)
+	        call moving_particle_relaxation1(2,0,ip,ix,iy,iz,nx,ny,nz,rtao,istep,ex,ey,ez)
 	      enddo
 !    if(istep==2)     write(*,*) "nn", nn,particle(ip)%F(1:3)
 
@@ -4250,7 +4397,7 @@ End subroutine
 	        ix=lnf(1,ipr+j)
 	        iy=lnf(2,ipr+j)
           iz=lnf(3,ipr+j)
-	        call moving_particle_relaxation1(0,ip,ix,iy,iz,nx,ny,nz,rtao,istep,ex,ey,ez)
+	        call moving_particle_relaxation1(4,0,ip,ix,iy,iz,nx,ny,nz,rtao,istep,ex,ey,ez)
 	      enddo
 !    if(istep==2)     write(*,*) "nn", nn,  particle(ip)%F(1:3)
 !.........Loop over particle interior nodes
@@ -4260,7 +4407,7 @@ End subroutine
 	        ix=lni(1,ipr+j)
 	        iy=lni(2,ipr+j)
           iz=lni(3,ipr+j)
-	        call moving_particle_relaxation1(1,ip,ix,iy,iz,nx,ny,nz,rtao,istep,ex,ey,ez)
+	        call moving_particle_relaxation1(3,1,ip,ix,iy,iz,nx,ny,nz,rtao,istep,ex,ey,ez)
 	      enddo
  !               write(*,*) particle(ip)%F(1:3)
 ! if(istep==2)                stop
@@ -4275,6 +4422,8 @@ End subroutine
       end if
      end if
 !
+!
+     if (mod(istep,100).eq.1) print *, "obst_count",obst_count
       return
     End subroutine
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -4282,15 +4431,15 @@ End subroutine
 !
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-    Subroutine moving_particle_relaxation1(mode,ip,ix,iy,iz,nx,ny,nz,rtao,istep,ex,ey,ez)
+    Subroutine moving_particle_relaxation1(obstacle,mode,ip,ix,iy,iz,nx,ny,nz,rtao,istep,ex,ey,ez)
     use solid,only:particle,gacce
     use fluid,only:node,temp,BODYF,fi_body
-    use system, only: use_MRT
+    use system, only: use_MRT,fixed_particles_flag
     use MRT, only : MRT_collision, MRT_IMB_collision, MRT_collision_body_forcing, MRT_IMB_collision_body_forcing
     IMPLICIT DOUBLE PRECISION (A-H,O-Z)
       real(8) ex(14),ey(14),ez(14),u1,u2,u3
 !.....local variables
-      integer  opposite_direction
+      integer  opposite_direction,obstacle
       real(8)  feq(0:14),peq(0:14),par(4),vol
       ! real(8)  f_mrt_post(0:14), delta_f
       real(8)  os_mrt(0:14)
@@ -4341,10 +4490,10 @@ End subroutine
 !.....Compute nodal area covered by particle
 !.....for interior node
       if(mode.eq.1)then
-	    B=1.d0
-	  elseif(mode.eq.2)then
-      B=0.0d0
-    else
+        B=1.d0
+      elseif(mode.eq.2)then
+        B=0.0d0
+      else
         par(1:3)=particle(ip)%coor(1:3)
         par(4)=particle(ip)%radius
 	    call nodal_volume_covered_by_particles(ix,iy,iz,par,vol)
@@ -4406,12 +4555,11 @@ End subroutine
             ! BGK IMB
             call equilibrium_function(u1,u2,u3,den,peq)
             do i=0,14
-
               os=peq(i)-temp(i,ix,iy,iz)+(1.d0-rtao)*(temp(i,ix,iy,iz)-feq(i))
                if(BODYF.eq.1)then
-                  node(ix,iy,iz)%fdd(i)=temp(i,ix,iy,iz)+rtao*(1.d0-B)*(feq(i)-temp(i,ix,iy,iz))+B*os+(1.0-B)*fi_body(i)
+                  if (.not.fixed_particles_flag) node(ix,iy,iz)%fdd(i)=temp(i,ix,iy,iz)+rtao*(1.d0-B)*(feq(i)-temp(i,ix,iy,iz))+B*os+(1.0-B)*fi_body(i)
                 else
-                  node(ix,iy,iz)%fdd(i)=temp(i,ix,iy,iz)+rtao*(1.d0-B)*(feq(i)-temp(i,ix,iy,iz))+B*os
+                  if (.not.fixed_particles_flag) node(ix,iy,iz)%fdd(i)=temp(i,ix,iy,iz)+rtao*(1.d0-B)*(feq(i)-temp(i,ix,iy,iz))+B*os
                end if
     !.........Compute forces on particle
               if(i.gt.0)then
@@ -4421,10 +4569,16 @@ End subroutine
     ! in the future do this torque	        fm=fm+fy*rx-fx*ry
               endif
             enddo
+
+            ! treat fixed moving particles nodes exactly like stationary particle nodes 
+            if (fixed_particles_flag .and. (obstacle.eq.2 .or. obstacle.eq.3)) then
+              call bounceback_stationary_particles(ix,iy,iz,nx,ny,nz)
+            end if
       end if
 	      
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !	    if(mode.eq.1)then
+      ! print *, "force on particle ", ix,iy,iz, fx, fy, fz
       particle(ip)%F(1)=particle(ip)%F(1)-B*fx
 	    particle(ip)%F(2)=particle(ip)%F(2)-B*fy
 	    particle(ip)%F(3)=particle(ip)%F(3)-B*fz
@@ -4457,11 +4611,17 @@ End subroutine
         else
           do i=0,14
             if(BODYF.eq.1)then
-              node(ix,iy,iz)%fdd(i)=temp(i,ix,iy,iz)+rtao*(feq(i)-temp(i,ix,iy,iz))+fi_body(i)
+                print *, "not sure if this is correct1"
+                if (.not.fixed_particles_flag) node(ix,iy,iz)%fdd(i)=temp(i,ix,iy,iz)+rtao*(feq(i)-temp(i,ix,iy,iz))+fi_body(i)
             else
-                node(ix,iy,iz)%fdd(i)=temp(i,ix,iy,iz)+rtao*(feq(i)-temp(i,ix,iy,iz))
+                print *, "not sure if this is correct2"
+                if (.not.fixed_particles_flag) node(ix,iy,iz)%fdd(i)=temp(i,ix,iy,iz)+rtao*(feq(i)-temp(i,ix,iy,iz))
             end if
           enddo
+          if (fixed_particles_flag .and. (obstacle.eq.2 .or. obstacle.eq.3)) then
+              print *, "not sure if this is correct3"
+              call bounceback_stationary_particles(ix,iy,iz,nx,ny,nz)
+          end if
         end if
 	    endif
 	  return
@@ -4740,7 +4900,7 @@ End subroutine
 
         ux_in=bc(1)
         ux_out=bc(2)
-        ! print *, ux_in, ux_out
+        ! print *, "ux_in, ux_out", ux_in, ux_out
 !.......inlet
         do iz=-1,nz+1
           do iy=-1,ny+1
@@ -4775,10 +4935,10 @@ End subroutine
 	      temp(12,nx,iy,iz)=temp(11,nx,iy,iz)-tmp-0.25d0*(tmp1-tmp2)
 	      temp(14,nx,iy,iz)=temp(13,nx,iy,iz)-tmp-0.25d0*(tmp1+tmp2)
 
-        if (istep==1 .and. periodic_flag)then
+        ! if (istep==1 .and. periodic_flag)then
            
 
-        endif
+        ! endif
                   ! if(istep==1 .and. periodic_flag)then
           !   ux=bc(1)
           !   uy=0.0d0

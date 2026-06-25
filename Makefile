@@ -20,7 +20,7 @@ OBJS := $(OBJDIR)/MRT.o \
         $(OBJDIR)/BPLBM3D.o
 
 # Optimization level can be overridden, e.g. make OPT="-O3 -march=native"
-OPT ?= -O2
+OPT ?= -O0
 
 # Common Fortran flags
 COMMON_FFLAGS := $(OPT) -I$(MODDIR) -J$(MODDIR) -Wno-tabs
