@@ -7,7 +7,7 @@
 0.001		!dx
 960.0d0 1120.0d0		! densities - fluid & solid
 0.6500 6.042e-5	! tau, viscousity
-0		!no of particles  546  20
+0  .false.	!no of particles  546  20
 5.1e7 1.0e5 1 0.8 0.05	!particle contact properties
 0  0.01     !friction option and friction coef
 0     !flag for wall_particle interaction
