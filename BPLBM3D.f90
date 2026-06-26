@@ -622,13 +622,13 @@
 !--------------------------LBM part--------------------------------------
       if(LBM)then
 !.....Open output files
-	      open(11,file='BPLBM_model.plt')  
+!	      open(11,file='BPLBM_model.plt')  
 	      open(12,file='model_info.dat')
 	      open(13,file='veloc.dat')
         open(14,file='aveloc.dat')
         open(20,file='particle_force.txt')
         open(21,file='particle_posi.txt')
-        open(34,file='spheres.plt')
+!        open(34,file='spheres.plt')
         open(unit=98, file='paraview/Fluids.pvd', status='replace')
         open(unit=99, file='paraview/particles.pvd', status='replace')
         !open(unit=199, file='paraview/particles_.csv', status='replace')
@@ -678,7 +678,8 @@
 	      rtao=1.d0/tao
         endif
       else
-        open(11,file='BPM_model.plt') 
+        ! open(11,file='BPM_model.plt') 
+        open(unit=99, file='paraview/particles.pvd', status='replace')
       end if
 !	read sphere-output-template
 !	  open(19, file='fe_sphere_block.dat')
@@ -860,14 +861,14 @@
       write(99,'(A)') '</VTKFile>'
       close(99)
 
-      close(11)
+!      close(11)
       if(LBM)then
 	    close(12)
 	    close(13)
         close(14)
         close(20)
         close(21)
-        close(34)
+!        close(34)
       end if
 !
 !-----------------------------------------------------------------------------------------------
@@ -3670,39 +3671,6 @@ vertex(3,8)=zmax
 
     close(999)
 !    close(9999)
-
-
-
-
-  return
-
-
-
-  !.....Write header for postprocessing with TECPLOT software
-  if(first)then
-  no_output=1
-  write(34,*) 'TITLE = DE3D'
-  write(34,*) 'VARIABLES = X, Y, Z, VV, Diameter'
-  ! write(11,*) 'ZONE T=',istep
-  write(34,*) 'ZONE T="Step:',istep,'", I=',np, ', J=1, K=1'
-  ! write(11,*) 'I=',np,'J=1, K=1'
-  write(34,*) "ZONETYPE=ORDERED, DATAPACKING=POINT"
-  else
-  ! write(11,*) 'ZONE T=',istep
-  write(34,*) 'ZONE T="Step:',istep,'", I=',np, ', J=1, K=1'
-  ! write(11,*) 'I=',np,'J=1, K=1'
-  write(34,*) "ZONETYPE=ORDERED, DATAPACKING=POINT"
-  endif
-  !
-  do i=1,np
-  u2=sqrt(particle(i)%U(1)**2+particle(i)%U(2)**2+particle(i)%U(3)**2)
-  write(34,110) particle(i)%coor(1:3),u2,2.0*particle(i)%radius
-  enddo
-  !
-  first=.false.
-  !write(11,*)' DATASETAUXDATA TIME=" October 13, 2002, 8 A.M."'
-  110 format(8(1x,g10.4))
-  120 format(4(1x,i4))
   return
 End subroutine
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -3765,19 +3733,32 @@ End subroutine
             end do
         end do
     end do
- 
     write(999,'(A)') '        </DataArray>'
 
 !   ! ---- Scalar: node flag ----
-!   write(999,'(A)') ' <DataArray type="Float64" Name="flag" NumberOfComponents="1" format="ascii">'
-! do k = 0, nz
-!         do j = 0, ny
-!             do i = 0, nx
-!                 write(999,'(I24)') node(i,j,k)%obst
-!             end do
-!         end do
-!     end do
-!   write(999,'(A)') ' </DataArray>'
+    write(999,'(A)') '        <DataArray type="Int8" Name="obstacle" NumberOfComponents="1" format="ascii">'
+
+    do k = 0, nz
+        do j = 0, ny
+            do i = 0, nx
+                write(999,'(I8)') node(i,j,k)%obst
+            end do
+        end do
+    end do
+    write(999,'(A)') '        </DataArray>'
+!    
+!   ! ---- Scalar: density ----
+    write(999,'(A)') '        <DataArray type="Float64" Name="density" NumberOfComponents="1" format="ascii">'
+
+    do k = 0, nz
+        do j = 0, ny
+            do i = 0, nx
+              call nodal_velocity(i,j,k,nx,ny,nz,ux,uy,uz,den)
+              write(999,'(ES24.16)') den
+            end do
+        end do
+    end do
+    write(999,'(A)') '        </DataArray>'
 
     write(999,'(A)') '      </PointData>'
 
@@ -3807,81 +3788,81 @@ End subroutine
 
     return
 
-!
+! !
 
-!.....Write header for postprocessing with TECPLOT software
-!.....uncomment following line, if this header should be printed
-      if(istep.eq.1)then
-	  no_output=1
-        write(11,*) 'TITLE = LB3D' 
-        write(11,*) 'VARIABLES = X, Y, Z, VX, VY, VZ, VV,  PRESS' 
-	  write(11,*)'ZONE T="Step:',istep,'",I=',nx,', J=',ny, ', &
-                                           K=',nz, ', F=POINT'
-	else
-	  write(11,*)'ZONE T="Step:',istep,'",I=',nx,', J=',ny, ',&
-                 K=',nz, ', F=POINT', ' VARSHARELIST=([1,2,3]=1)'
-	endif
-! Loop over all nodes
-      do iz=0,nz
-	     do iy=0,ny
-          do ix =0,nx
-          if(node(ix,iy,iz)%obst.ne.0) then 
-!
-!...........obstacle indicator
-            iob=1
-!
-!...........velocity components = 0
-            ux=0.d0
-            uy=0.d0
-	          uz=0.d0
-!...........pressure = average pressure
-            press=d0*c_squ
-          else
-            call nodal_velocity(ix,iy,iz,nx,ny,nz,ux,uy,uz,den)
-!...........pressure
-            press=den*c_squ
-! 
-            iob=0
-          end if
-          velocity=sqrt(ux*ux+uy*uy+uz*uz)
-          if(umax.lt.velocity) umax=velocity
-!
-!      press=taostar(ix,iy)-tao
-!.......write results to file
-          if(first)then
-	          write(11,100) ix, iy, iz, ux, uy, uz, velocity, press
-	        else
-            write(11,110) ux, uy, uz, velocity,press
-	        endif
-        enddo
-      enddo
-    end do
-!
-!.....wall boundary
-!	if(first)then
-!	    write(11,120) vertex(1,1),vertex(2,1),1,ne+1
-!	  do i=1,ne
-!          write(11,130)(vertex(1,i)-vertex(1,1)),&
-!     &                 (vertex(2,i)-vertex(2,1))
-!	  enddo
-!	  write(11,130) vertex(1,1),vertex(2,1)
-!	endif
-!
-!.....write stationary particles
-	  if(first.and.ns.gt.0)then
-	    do i=1,ns
-          write(11,140) particle(i)%coor(1),particle(i)%coor(2),particle(i)%coor(3)
-	      write(11,*) particle(i)%radius
-	    enddo
-	  endif	
-!.....write moving particles
-!
-	  first=.false.
-	  no_output=no_output+1
-  100 format(1x,i5,i5,i5,1x,g10.4,1x,g10.4,1x,g10.4,1x,g10.4,1x,g10.4) 
-  110 format(            1x,g10.4,1x,g10.4,1x,g10.4,1x,g10.4,1x,g10.4) 
-  140 format(            1x,g10.4,1x,g10.4,1x,g10.4) 
-      return
+! !.....Write header for postprocessing with TECPLOT software
+! !.....uncomment following line, if this header should be printed
+!       if(istep.eq.1)then
+! 	  no_output=1
+!         write(11,*) 'TITLE = LB3D' 
+!         write(11,*) 'VARIABLES = X, Y, Z, VX, VY, VZ, VV,  PRESS' 
+! 	  write(11,*)'ZONE T="Step:',istep,'",I=',nx,', J=',ny, ', &
+!                                            K=',nz, ', F=POINT'
+! 	else
+! 	  write(11,*)'ZONE T="Step:',istep,'",I=',nx,', J=',ny, ',&
+!                  K=',nz, ', F=POINT', ' VARSHARELIST=([1,2,3]=1)'
+! 	endif
+! ! Loop over all nodes
+!       do iz=0,nz
+! 	     do iy=0,ny
+!           do ix =0,nx
+!           if(node(ix,iy,iz)%obst.ne.0) then 
+! !
+! !...........obstacle indicator
+!             iob=1
+! !
+! !...........velocity components = 0
+!             ux=0.d0
+!             uy=0.d0
+! 	          uz=0.d0
+! !...........pressure = average pressure
+!             press=d0*c_squ
+!           else
+!             call nodal_velocity(ix,iy,iz,nx,ny,nz,ux,uy,uz,den)
+! !...........pressure
+!             press=den*c_squ
+! ! 
+!             iob=0
+!           end if
+!           velocity=sqrt(ux*ux+uy*uy+uz*uz)
+!           if(umax.lt.velocity) umax=velocity
+! !
+! !      press=taostar(ix,iy)-tao
+! !.......write results to file
+!           if(first)then
+! 	          write(11,100) ix, iy, iz, ux, uy, uz, velocity, press
+! 	        else
+!             write(11,110) ux, uy, uz, velocity,press
+! 	        endif
+!         enddo
+!       enddo
+!     end do
+! !
+! !.....wall boundary
+! !	if(first)then
+! !	    write(11,120) vertex(1,1),vertex(2,1),1,ne+1
+! !	  do i=1,ne
+! !          write(11,130)(vertex(1,i)-vertex(1,1)),&
+! !     &                 (vertex(2,i)-vertex(2,1))
+! !	  enddo
+! !	  write(11,130) vertex(1,1),vertex(2,1)
+! !	endif
+! !
+! !.....write stationary particles
+! 	  if(first.and.ns.gt.0)then
+! 	    do i=1,ns
+!           write(11,140) particle(i)%coor(1),particle(i)%coor(2),particle(i)%coor(3)
+! 	      write(11,*) particle(i)%radius
+! 	    enddo
+! 	  endif	
+! !.....write moving particles
+! !
+! 	  first=.false.
+! 	  no_output=no_output+1
+!   100 format(1x,i5,i5,i5,1x,g10.4,1x,g10.4,1x,g10.4,1x,g10.4,1x,g10.4) 
+!   110 format(            1x,g10.4,1x,g10.4,1x,g10.4,1x,g10.4,1x,g10.4) 
+!   140 format(            1x,g10.4,1x,g10.4,1x,g10.4) 
+      ! return
     End subroutine
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !
