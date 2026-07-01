@@ -640,8 +640,8 @@
         open(20,file='particle_force.txt')
         open(21,file='particle_posi.txt')
         open(34,file='spheres.plt')
-        open(unit=98, file='paraview/Fluids.pvd', status='replace')
-        open(unit=99, file='paraview/particles.pvd', status='replace')
+        open(unit=98, file='output/paraview/Fluids.pvd', status='replace')
+        open(unit=99, file='output/paraview/particles.pvd', status='replace')
         !open(unit=199, file='paraview/particles_.csv', status='replace')
 
         write(98,'(A)') '<?xml version="1.0"?>'
@@ -803,12 +803,14 @@
            call write_results1
            call write_spheres
            write(20,1006) istep, particle(1)%coor(1:3),particle(1)%U(1:3),particle(1)%F(1:3)
+           flush(20)
           endif
 
           if(mod(istep,outsteps).eq.0)then
            call write_results1
            call write_spheres
            write(20,1006) istep, particle(1)%coor(1:3),particle(1)%U(1:3),particle(1)%F(1:3)
+           flush(20)
            !.....calculate FLUID velocity at fluid nodes
            call write_velocity(nx,ny,nz)
           endif
@@ -1240,10 +1242,10 @@ vertex(3,8)=zmax
 !.........type 0: all wall fixed boundary condition
           if(bctype.eq.0)then
 !.........type 1: periodic boundary condition
-            allocate(bc(2))
-            read(10,*) periodic_flag,implement
-            read(10,*) fixed_particles_flag
-            read(10,*) bc(1),bc(2)
+            ! allocate(bc(2))
+            ! read(10,*) periodic_flag,implement
+            ! read(10,*) fixed_particles_flag
+            ! read(10,*) bc(1),bc(2)
           else if(bctype.eq.1)then
 !.........acceleration
             allocate(bc(1))
@@ -1273,6 +1275,10 @@ vertex(3,8)=zmax
 !           write(*,*) dt
 !.........Lattice speed
           cc=dx/dt
+        if (bctype.eq.3) then
+          bc(1)=bc(1)/cc
+          bc(2)=bc(2)/cc
+        end if
 !.........Estimate critical time step for particle contact
 	      dtime=factor*4.0*sqrt(PI*ds*(minrad*dx)**3.0/kn/3.0)/dt
 !           write(*,*) dtime,factor,PI,ds,minrad*dx,kn,dt,tao,visco
@@ -2025,6 +2031,18 @@ vertex(3,8)=zmax
         ! end if
 
         call nodes_of_moving_particles(ip)
+! !.......number of boundary nodes for current particle
+! 	    particle(ip)%nb=nob-nnb
+! !        write(*,*) ip,particle(ip)%nb
+! !.......pointer pointing to the boundary node list
+! 	    particle(ip)%pb=nnb+1
+! !.......number of interior nodes for current particle
+! 	    particle(ip)%ni=noi-nni
+! !.......pointer pointing to the interior node list
+! 	    particle(ip)%pn=nni+1
+! !        write(*,*) ip,particle(ip)%ni,particle(ip)%pn
+! 	    nnb=nob
+! 	    nni=noi
 !.......number of boundary nodes for current particle
 	    particle(ip)%nb=nob-nnb
 !        write(*,*) ip,particle(ip)%nb
@@ -2034,9 +2052,14 @@ vertex(3,8)=zmax
 	    particle(ip)%ni=noi-nni
 !.......pointer pointing to the interior node list
 	    particle(ip)%pn=nni+1
+!.......number of interior nodes for current particle
+	    particle(ip)%nf=nof-nnf
+!.......pointer pointing to the interior node list
+	    particle(ip)%pf=nnf+1
 !        write(*,*) ip,particle(ip)%ni,particle(ip)%pn
 	    nnb=nob
 	    nni=noi
+      nnf=nof
 !
 100        if(.not. associated(p1%next)) exit
         p1=>p1%next
@@ -2149,7 +2172,7 @@ vertex(3,8)=zmax
         if(iy<0.or.iy>ny) iy2=modulo(iy,ny+1)
         if(iz<0.or.iz>nz) iz2=modulo(iz,nz+1)
 	      if(node(ix,iy2,iz2)%obst.eq.3) cycle
-	      if(inside_particle(ix,iy,iz,xc,yc,zc,rad2)==1)then
+	      if(inside_particle(ix,iy,iz,xc,yc,zc,rad2)==1)then ! don't use updated iy2 and iz2, use original iy and iz
 	        node(ix,iy2,iz2)%obst=2
 	        nb=nb+1
 	        lb(1,nb)=ix
@@ -2174,6 +2197,7 @@ vertex(3,8)=zmax
 	  iy=lb(2,i)
 	  iz=lb(3,i)
     ! print *, modulo(0,ny+1)
+!...modification for periodic boundary condition
     if(iy<0.or.iy>ny) iy=modulo(iy,ny+1)
     if(iz<0.or.iz>nz) iz=modulo(iz,nz+1)
 	  if(node(ix,iy,iz)%obst.eq.4.or.node(ix,iy,iz)%obst.eq.3)goto 30
@@ -2250,12 +2274,14 @@ vertex(3,8)=zmax
   Subroutine check_neighbour_nodes(ix,iy,iz,n0,n4,l0,NNN)
 !**********************************************************************
     use fluid,only:nx,ny,nz,node
+    use system,only:periodic_flag
     implicit none     
     integer  l0(3,14),n0,n4,NNN,ix,iy,iz,iy2,iz2
 !
       iy2=iy
       iz2=iz
       if(ix<0.or.ix>nx) goto 30 ! .or. iy<0.or.iy>ny .or. iz<0.or.iz>nz
+      if(.not. periodic_flag .and. (iy<0.or.iy>ny .or. iz<0.or.iz>nz)) goto 30
       if(iy<0.or.iy>ny) iy2=modulo(iy,ny+1)
       if(iz<0.or.iz>nz) iz2=modulo(iz,nz+1)
       NNN=NNN+1
@@ -3532,7 +3558,7 @@ vertex(3,8)=zmax
           particle(ip)%coor(1)=particle(ip)%coor(1)+particle(ip)%U(1)*dt
           particle(ip)%coor(2)=particle(ip)%coor(2)+particle(ip)%U(2)*dt
           particle(ip)%coor(3)=particle(ip)%coor(3)+particle(ip)%U(3)*dt
-! periodic on XY and XZ planes, but not on X direction
+!.........periodic on XY and XZ planes, but not on X direction
           if(boundary_dem==1)then
             ! if(particle(ip)%coor(1)>vertex(1,2))then
             !   particle(ip)%coor(1)=particle(ip)%coor(1)-vertex(1,2)
@@ -3668,8 +3694,8 @@ vertex(3,8)=zmax
   write(step_string,'(I8.8)') istep
   output_name = 'particles_' // trim(step_string) // '.vtp'
   output_name2 = 'particles_' // trim(step_string) // '.csv'
-  output_path = 'paraview/' // trim(output_name)
-  output_path2 = 'paraview/' // trim(output_name2)
+  output_path = 'output/paraview/' // trim(output_name)
+  output_path2 = 'output/paraview/' // trim(output_name2)
   ! output each istep/file
   write(99,'(A,I0,A,A,A)') ' <DataSet timestep="', istep, &
   '" group="" part="0" file="', trim(output_name), '"/>'
@@ -3711,7 +3737,7 @@ vertex(3,8)=zmax
   write(999,'(A)') ' <DataArray type="Float64" Name="hydrodynamic_force" NumberOfComponents="3" format="ascii">'
     do i=1,np
     write(999,'(3ES24.16)') particle(i)%F(1:3)
-    print *, particle(i)%F(1:3)
+    ! print *, particle(i)%F(1:3)
     end do
   write(999,'(A)') ' </DataArray>'
 
@@ -3722,7 +3748,7 @@ vertex(3,8)=zmax
   write(999,'(A)') ' <DataArray type="Float64" NumberOfComponents="3" format="ascii">'
     do i=1,np
     write(999,'(3ES24.16)') particle(i)%coor(1:3)
-    print *, "coords:", particle(i)%coor(:)
+    ! print *, "coord", particle(i)%coor(:)
     end do
   write(999,'(A)') ' </DataArray>'
   write(999,'(A)') ' </Points>'
@@ -3810,7 +3836,7 @@ End subroutine
 ! for paraview files
     write(step_string,'(I8.8)') istep
     output_name = 'Fluids_' // trim(step_string) // '.vts'
-    output_path = 'paraview/' // trim(output_name)
+    output_path = 'output/paraview/' // trim(output_name)
 
 ! output each istep/file
     write(98,'(A,I0,A,A,A)') '    <DataSet timestep="', istep, &
@@ -3978,6 +4004,7 @@ End subroutine
 
       ! node(:,:,:)%obst=0
 
+    if (.not.fixed_particles_flag) then
 !.....Release old nodes in obst
       do i=1,noi
 	    ix=lni(1,i)
@@ -3999,6 +4026,7 @@ End subroutine
         iz=lnf(3,i)
 	      node(ix,iy,iz)%obst=0
       end do
+    end if
 
       ! do ix=0,nx
       !   do iy=0,ny
@@ -4021,7 +4049,7 @@ End subroutine
       do while(.true.)
         ip=p1%num
         if(particle(ip)%active==0)goto 100
-        call nodes_of_moving_particles(ip)
+        if (.not.fixed_particles_flag) call nodes_of_moving_particles(ip)
 !        write(*,*) ip, nob
 !.......number of boundary nodes for current particle
 	    particle(ip)%nb=nob-nnb
@@ -4183,19 +4211,38 @@ End subroutine
 	Subroutine nodal_volume_covered_by_particles(ix,iy,iz,ipar,vol)
     use fluid,only:nx
     use solid,only:boundary_dem
+    use system,only:xmax,ymax,zmax
     IMPLICIT DOUBLE PRECISION (A-H,O-Z)   
 	  real(8)   ipar(4),rand
-    integer seed
+    integer seed, ix2,iy2,iz2
 
 !
     xc=ipar(1)
 	  yc=ipar(2)
 	  zc=ipar(3)
 	  rad=ipar(4)
+    ix2=ix
+    iy2=iy
+    iz2=iz
+
+    ! #####################################################################################################
+    ! undo periodic boundary condition for sake of calculating volume fraction.
+    if (iy-yc .gt. ymax/2) iy2=iy-(ymax+1)
+    if (yc-iy .gt. ymax/2) iy2=iy+(ymax+1)
+    if (iz-zc .gt. zmax/2) iz2=iz-(zmax+1)
+    if (zc-iz .gt. zmax/2) iz2=iz+(zmax+1)
+    ! ^^^^^^ periodic boundary treatment
+    if (rad.ge.xmax/2 .or. rad.ge.ymax/2 .or. rad.ge.zmax/2) then
+      print *, rad, xmax, ymax, zmax
+      print *, "Particle is too large for periodic boundary condition treatment (as seen above this)!"
+      stop
+    end if
+    ! #####################################################################################################
+
 	  rad2=rad*rad
-	  xmin=ix-0.5
-	  ymin=iy-0.5
-	  zmin=iz-0.5
+	  xmin=ix2-0.5
+	  ymin=iy2-0.5
+	  zmin=iz2-0.5
 	  N=100
     M=0
   seed=1234567
@@ -4217,7 +4264,7 @@ End subroutine
 	  if(dx*dx+dy*dy+dz*dz.le.rad2) M=M+1
 	enddo
 	vol=M*1.d0/N
-  vol=0.2
+  ! vol=0.2
       return
     End subroutine
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -4274,7 +4321,7 @@ End subroutine
       end do
 !      write(*,*) "now=",now0
 !      stop
-!.....Loop over fixed moving particle nodes
+!.....Loop over fixed moving particle nodes (if fixed_particles_flag turned on)
       if (nm.gt.0 .and. fixed_particles_flag) then
           do i=1,noi
             ix=lni(1,i)
@@ -4314,7 +4361,7 @@ End subroutine
 !	    ixs=yb(1,iy)
 !	    ixe=yb(2,iy)
 	      do ix=0,nx
-          if (node(ix,iy,iz)%obst.ne.0) obst_count(node(ix,iy,iz)%obst) = obst_count(node(ix,iy,iz)%obst) + 1 !print *, node(ix,iy,iz)%obst,ix,iy,iz
+          obst_count(node(ix,iy,iz)%obst) = obst_count(node(ix,iy,iz)%obst) + 1 !print *, node(ix,iy,iz)%obst,ix,iy,iz
 	      if(node(ix,iy,iz)%obst.eq.0 .or. (fixed_particles_flag .and. node(ix,iy,iz)%obst.eq.4))then
 	        call nodal_velocity(ix,iy,iz,nx,ny,nz,ux,uy,uz,den)
 
@@ -4433,7 +4480,7 @@ End subroutine
 
     Subroutine moving_particle_relaxation1(obstacle,mode,ip,ix,iy,iz,nx,ny,nz,rtao,istep,ex,ey,ez)
     use solid,only:particle,gacce
-    use fluid,only:node,temp,BODYF,fi_body
+    use fluid,only:node,temp,BODYF,fi_body,tao
     use system, only: use_MRT,fixed_particles_flag
     use MRT, only : MRT_collision, MRT_IMB_collision, MRT_collision_body_forcing, MRT_IMB_collision_body_forcing
     IMPLICIT DOUBLE PRECISION (A-H,O-Z)
@@ -4497,7 +4544,8 @@ End subroutine
         par(1:3)=particle(ip)%coor(1:3)
         par(4)=particle(ip)%radius
 	    call nodal_volume_covered_by_particles(ix,iy,iz,par,vol)
-	    B=vol
+	    ! B=vol
+      B=vol*(tao-0.5)/((1.0-vol)+(tao-0.5))
 !      write(*,*) "volume is ", B
 !      stop
 	  endif
@@ -4557,9 +4605,9 @@ End subroutine
             do i=0,14
               os=peq(i)-temp(i,ix,iy,iz)+(1.d0-rtao)*(temp(i,ix,iy,iz)-feq(i))
                if(BODYF.eq.1)then
-                  if (.not.fixed_particles_flag) node(ix,iy,iz)%fdd(i)=temp(i,ix,iy,iz)+rtao*(1.d0-B)*(feq(i)-temp(i,ix,iy,iz))+B*os+(1.0-B)*fi_body(i)
+                  node(ix,iy,iz)%fdd(i)=temp(i,ix,iy,iz)+rtao*(1.d0-B)*(feq(i)-temp(i,ix,iy,iz))+B*os+(1.0-B)*fi_body(i)
                 else
-                  if (.not.fixed_particles_flag) node(ix,iy,iz)%fdd(i)=temp(i,ix,iy,iz)+rtao*(1.d0-B)*(feq(i)-temp(i,ix,iy,iz))+B*os
+                  node(ix,iy,iz)%fdd(i)=temp(i,ix,iy,iz)+rtao*(1.d0-B)*(feq(i)-temp(i,ix,iy,iz))+B*os !if (.not.fixed_particles_flag .or. (obstacle.eq.4)) 
                end if
     !.........Compute forces on particle
               if(i.gt.0)then
@@ -4571,9 +4619,9 @@ End subroutine
             enddo
 
             ! treat fixed moving particles nodes exactly like stationary particle nodes 
-            if (fixed_particles_flag .and. (obstacle.eq.2 .or. obstacle.eq.3)) then
-              call bounceback_stationary_particles(ix,iy,iz,nx,ny,nz)
-            end if
+            ! if (fixed_particles_flag .and. (obstacle.eq.2 .or. obstacle.eq.3)) then
+            !   call bounceback_stationary_particles(ix,iy,iz,nx,ny,nz)
+            ! end if
       end if
 	      
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -4612,15 +4660,15 @@ End subroutine
           do i=0,14
             if(BODYF.eq.1)then
                 print *, "not sure if this is correct1"
-                if (.not.fixed_particles_flag) node(ix,iy,iz)%fdd(i)=temp(i,ix,iy,iz)+rtao*(feq(i)-temp(i,ix,iy,iz))+fi_body(i)
+                node(ix,iy,iz)%fdd(i)=temp(i,ix,iy,iz)+rtao*(feq(i)-temp(i,ix,iy,iz))+fi_body(i) ! if B=0 perform standard relaxation with body force
             else
-                print *, "not sure if this is correct2"
-                if (.not.fixed_particles_flag) node(ix,iy,iz)%fdd(i)=temp(i,ix,iy,iz)+rtao*(feq(i)-temp(i,ix,iy,iz))
+                ! print *, "not sure if this is correct2"
+                node(ix,iy,iz)%fdd(i)=temp(i,ix,iy,iz)+rtao*(feq(i)-temp(i,ix,iy,iz)) ! if B=0 perform standard relaxation
             end if
           enddo
-          if (fixed_particles_flag .and. (obstacle.eq.2 .or. obstacle.eq.3)) then
-              print *, "not sure if this is correct3"
-              call bounceback_stationary_particles(ix,iy,iz,nx,ny,nz)
+          if ((obstacle.eq.2 .or. obstacle.eq.3)) then
+              print *, "ERROR, should never happen!"
+              ! call bounceback_stationary_particles(ix,iy,iz,nx,ny,nz)
           end if
         end if
 	    endif

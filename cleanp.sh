@@ -1,1 +1,1 @@
-rm paraview/*
+rm output/paraview/*
