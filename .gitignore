@@ -24,6 +24,8 @@ compile_commands.json
 *.swp
 *~
 
-# Paraview folder
+# Output files
 paraview/
 output/
+particle_force.txt
+particle_posi.txt
