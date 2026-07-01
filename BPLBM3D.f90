@@ -4170,7 +4170,7 @@ End subroutine
 	  if(dx*dx+dy*dy+dz*dz.le.rad2) M=M+1
 	enddo
 	vol=M*1.d0/N
-  ! vol=0.2
+  vol=0.2
       return
     End subroutine
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -4268,7 +4268,7 @@ End subroutine
 !	    ixe=yb(2,iy)
 	      do ix=0,nx
           obst_count(node(ix,iy,iz)%obst) = obst_count(node(ix,iy,iz)%obst) + 1 !print *, node(ix,iy,iz)%obst,ix,iy,iz
-	      if(node(ix,iy,iz)%obst.eq.0))then ! .or. (fixed_particles_flag .and. node(ix,iy,iz)%obst.eq.4
+	      if(node(ix,iy,iz)%obst.eq.0)then ! .or. (fixed_particles_flag .and. node(ix,iy,iz)%obst.eq.4
 	        call nodal_velocity(ix,iy,iz,nx,ny,nz,ux,uy,uz,den)
 
           if(use_MRT)then
@@ -4533,6 +4533,7 @@ End subroutine
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !	    if(mode.eq.1)then
       ! print *, "force on particle ", ix,iy,iz, fx, fy, fz
+      ! print *, B, fx, fy, fz
       particle(ip)%F(1)=particle(ip)%F(1)-B*fx
 	    particle(ip)%F(2)=particle(ip)%F(2)-B*fy
 	    particle(ip)%F(3)=particle(ip)%F(3)-B*fz

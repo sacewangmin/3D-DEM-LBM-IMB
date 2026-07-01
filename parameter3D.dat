@@ -4,10 +4,10 @@
 .false.  !MRT ; Relaxation values for MRT. S1 S2 S4 S14: 1.8d0 1.4d0 1.6d0 1.2d0 ! 1.6 1.2 1.6 1.2
 
 0.04 0.02 0.02 !0.1 0.16 0.1 !
-0.0002		!dx
+0.001		!dx
 1000.0d0 2560.0d0 !960.0d0 1120.0d0		! densities - fluid & solid
 0.6105 1.0e-6 ! 0.6500 6.042e-5	! tau, viscousity ! try 0.501
-216	!no of particles  546  20
+1	!no of particles  546  20
 5.1e7 1.0e5 1 0.8 0.05	!particle contact properties
 0  0.01     !friction option and friction coef
 0     !flag for wall_particle interaction
@@ -19,7 +19,7 @@
 1           ! DEM boundary
 3 !3           ! boundary type  for LBM
 .true. 2   ! periodic_flag; implement method: 1 extra lay, 2 direct pass
-.true.      ! fixed_particles_flag (set to true to fix all moving particles)
+.false.      ! fixed_particles_flag (set to true to fix all moving particles)
 0.005 0.005 ! 0.001  1
 
 
