@@ -2086,11 +2086,11 @@ vertex(3,8)=zmax
 !      real(8) xc,yc,rad,rad2
 !.....local variables
       integer lb(3,50000),l0(3,14),xl,xr,yf,yb,zu,zd,x,y,z
-      integer ip,direction,current,inside_particle,NNN, count1,count2,count3
-      count1=0
-      count2=0
-      count3=0
-!
+      integer ip,direction,current,inside_particle,NNN!, count1,count2,count3
+!       count1=0
+!       count2=0
+!       count3=0
+! !
 !.....Particle paramters
 	  xc=particle(ip)%coor(1)
 	  yc=particle(ip)%coor(2)
@@ -2302,101 +2302,7 @@ vertex(3,8)=zmax
   30  return
 
 	End subroutine
-!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	Subroutine nodes_of_moving_particles_periodic(ip)
-    use solid
-    use fluid,only:xb,yb,nx,ny,lnb,node
-    use fs_inter,only:nob
-    IMPLICIT DOUBLE PRECISION (A-H,O-Z)    
-!      
-!      real(8) xc,yc,rad,rad2
-!.....local variables
-      integer  ip,direction,current,inside_particle
-!
-!.....Particel paramters
-!	  xc=particle(ip)%coor(1)
-!	  yc=particle(ip)%coor(2)
-!	  rad=particle(ip)%radius
-!	  rad2=rad*rad
-!.....Identify the 1st boundary nodes: bottom one
-!	  ix=xc
-!	  dx=real(ix)-xc
-!      write(*,*) xc,ix,dx,rad2
-!	  if((rad2-dx*dx).lt.0.0d0.or.(rad2-dx*dx).gt.1.d4)then
-!	    print*,'ix,iy,negative squaroot'
-!	  endif
-!	  dy=yc-sqrt(rad2-dx*dx)
-!	  iy=dy
-!	  if(dy.gt.0.and.iy.ne.dy)iy=iy+1
-!
-!.....Initialisation of boundary trace procedure
-!.....Direction priority order W - N - E - S - W
-!.....set initial direction: W
-!.....set current trial direction (current): W 
-!	  direction=1
-!	  current=1
-!!	  ix0=ix
-!	  iy0=iy
-!	  ixc=ix
-!	  iyc=iy
-!	  if(ix.ge.1.and.ix.le.nx.and.iy.ge.1.and.iy.le.ny)then
-!!!!      ixe=yb(2,iy)
-!	      iys=xb(1,ix)
-!	      iye=xb(2,ix)
-!	      if(ix.ge.ixs.and.ix.le.ixe.and.iy.ge.iys.and.iy.le.iye)then
-!	        nob=nob+1
-!	        lnb(1,nob)=ix
-!	        lnb(2,nob)=iy
-!	        node(ix,iy)%obst=2
-!	      endif
-!	    endif
-!	  endif
-!
- !     do while(.true.)
-!.......get direction increments
-!	    call node_incr(current,i,j)
-!.......current trial node: ixc, iyc
-!	    ixc=ix+i
-!	    iyc=iy+j
-!.......exit if the first node is reached again
-!	    if(ixc.eq.ix0.and.iyc.eq.iy0)exit
-!.......check if the trial node in the particle 
-!.......case: Yes 
-!	    if(inside_particle(ixc,iyc,izc,xc,yc,zc,rad2).eq.1)then
-!.........mark the node 
-!	      ix=ixc
-!	      iy=iyc
-!..........make sure that the node is within the domain
-!	       if(ix.ge.1.and.ix.le.nx.and.iy.ge.1.and.iy.le.ny)then
-!	         if(node(ix,iy)%obst.eq.0)then
-!	           ixs=yb(1,iy)
-!	           ixe=yb(2,iy)
-!	           iys=xb(1,ix)
-!	           iye=xb(2,ix)
-!	           if(ix.ge.ixs.and.ix.le.ixe.and.iy.ge.iys.and.iy.le.iye) then
-!	             nob=nob+1
-!	             lnb(1,nob)=ix
-!	             lnb(2,nob)=iy
-!	             node(ix,iy)%obst=2
-!	           endif
-!	         endif
-!	       endif
-!..........set next trace direction to the direction with higher priority 
-!	      current=current-1
-!	      if(current.lt.direction)current=direction
-!!.......case: No - set trace direction to next (lower priority)
-!    else
-!	      current=current+1
-!	      if(current.eq.direction+2)direction=direction+1
-!	    endif
-!	  end do
-!!
-        return
-      End subroutine
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!
-!
 !
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 	Subroutine node_incr(direction,i,j)
@@ -3913,81 +3819,81 @@ End subroutine
 
     return
 
-!
+! !
 
-!.....Write header for postprocessing with TECPLOT software
-!.....uncomment following line, if this header should be printed
-      if(istep.eq.1)then
-	  no_output=1
-        write(11,*) 'TITLE = LB3D' 
-        write(11,*) 'VARIABLES = X, Y, Z, VX, VY, VZ, VV,  PRESS' 
-	  write(11,*)'ZONE T="Step:',istep,'",I=',nx,', J=',ny, ', &
-                                           K=',nz, ', F=POINT'
-	else
-	  write(11,*)'ZONE T="Step:',istep,'",I=',nx,', J=',ny, ',&
-                 K=',nz, ', F=POINT', ' VARSHARELIST=([1,2,3]=1)'
-	endif
-! Loop over all nodes
-      do iz=0,nz
-	     do iy=0,ny
-          do ix =0,nx
-          if(node(ix,iy,iz)%obst.ne.0) then 
-!
-!...........obstacle indicator
-            iob=1
-!
-!...........velocity components = 0
-            ux=0.d0
-            uy=0.d0
-	          uz=0.d0
-!...........pressure = average pressure
-            press=d0*c_squ
-          else
-            call nodal_velocity(ix,iy,iz,nx,ny,nz,ux,uy,uz,den)
-!...........pressure
-            press=den*c_squ
-! 
-            iob=0
-          end if
-          velocity=sqrt(ux*ux+uy*uy+uz*uz)
-          if(umax.lt.velocity) umax=velocity
-!
-!      press=taostar(ix,iy)-tao
-!.......write results to file
-          if(first)then
-	          write(11,100) ix, iy, iz, ux, uy, uz, velocity, press
-	        else
-            write(11,110) ux, uy, uz, velocity,press
-	        endif
-        enddo
-      enddo
-    end do
-!
-!.....wall boundary
-!	if(first)then
-!	    write(11,120) vertex(1,1),vertex(2,1),1,ne+1
-!	  do i=1,ne
-!          write(11,130)(vertex(1,i)-vertex(1,1)),&
-!     &                 (vertex(2,i)-vertex(2,1))
-!	  enddo
-!	  write(11,130) vertex(1,1),vertex(2,1)
-!	endif
-!
-!.....write stationary particles
-	  if(first.and.ns.gt.0)then
-	    do i=1,ns
-          write(11,140) particle(i)%coor(1),particle(i)%coor(2),particle(i)%coor(3)
-	      write(11,*) particle(i)%radius
-	    enddo
-	  endif	
-!.....write moving particles
-!
-	  first=.false.
-	  no_output=no_output+1
-  100 format(1x,i5,i5,i5,1x,g10.4,1x,g10.4,1x,g10.4,1x,g10.4,1x,g10.4) 
-  110 format(            1x,g10.4,1x,g10.4,1x,g10.4,1x,g10.4,1x,g10.4) 
-  140 format(            1x,g10.4,1x,g10.4,1x,g10.4) 
-      return
+! !.....Write header for postprocessing with TECPLOT software
+! !.....uncomment following line, if this header should be printed
+!       if(istep.eq.1)then
+! 	  no_output=1
+!         write(11,*) 'TITLE = LB3D' 
+!         write(11,*) 'VARIABLES = X, Y, Z, VX, VY, VZ, VV,  PRESS' 
+! 	  write(11,*)'ZONE T="Step:',istep,'",I=',nx,', J=',ny, ', &
+!                                            K=',nz, ', F=POINT'
+! 	else
+! 	  write(11,*)'ZONE T="Step:',istep,'",I=',nx,', J=',ny, ',&
+!                  K=',nz, ', F=POINT', ' VARSHARELIST=([1,2,3]=1)'
+! 	endif
+! ! Loop over all nodes
+!       do iz=0,nz
+! 	     do iy=0,ny
+!           do ix =0,nx
+!           if(node(ix,iy,iz)%obst.ne.0) then 
+! !
+! !...........obstacle indicator
+!             iob=1
+! !
+! !...........velocity components = 0
+!             ux=0.d0
+!             uy=0.d0
+! 	          uz=0.d0
+! !...........pressure = average pressure
+!             press=d0*c_squ
+!           else
+!             call nodal_velocity(ix,iy,iz,nx,ny,nz,ux,uy,uz,den)
+! !...........pressure
+!             press=den*c_squ
+! ! 
+!             iob=0
+!           end if
+!           velocity=sqrt(ux*ux+uy*uy+uz*uz)
+!           if(umax.lt.velocity) umax=velocity
+! !
+! !      press=taostar(ix,iy)-tao
+! !.......write results to file
+!           if(first)then
+! 	          write(11,100) ix, iy, iz, ux, uy, uz, velocity, press
+! 	        else
+!             write(11,110) ux, uy, uz, velocity,press
+! 	        endif
+!         enddo
+!       enddo
+!     end do
+! !
+! !.....wall boundary
+! !	if(first)then
+! !	    write(11,120) vertex(1,1),vertex(2,1),1,ne+1
+! !	  do i=1,ne
+! !          write(11,130)(vertex(1,i)-vertex(1,1)),&
+! !     &                 (vertex(2,i)-vertex(2,1))
+! !	  enddo
+! !	  write(11,130) vertex(1,1),vertex(2,1)
+! !	endif
+! !
+! !.....write stationary particles
+! 	  if(first.and.ns.gt.0)then
+! 	    do i=1,ns
+!           write(11,140) particle(i)%coor(1),particle(i)%coor(2),particle(i)%coor(3)
+! 	      write(11,*) particle(i)%radius
+! 	    enddo
+! 	  endif	
+! !.....write moving particles
+! !
+! 	  first=.false.
+! 	  no_output=no_output+1
+!   100 format(1x,i5,i5,i5,1x,g10.4,1x,g10.4,1x,g10.4,1x,g10.4,1x,g10.4) 
+!   110 format(            1x,g10.4,1x,g10.4,1x,g10.4,1x,g10.4,1x,g10.4) 
+!   140 format(            1x,g10.4,1x,g10.4,1x,g10.4) 
+      ! return
     End subroutine
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !
@@ -4031,7 +3937,7 @@ End subroutine
       ! do ix=0,nx
       !   do iy=0,ny
       !     do iz=0,nz
-      !       if (node(ix,iy,iz)%obst .ne. 0) print *, "woot!", ix, iy, iz, node(ix,iy,iz)%obst
+      !       if (node(ix,iy,iz)%obst .ne. 0) print *, ix, iy, iz, node(ix,iy,iz)%obst
       !     enddo
       !   enddo
       ! enddo
@@ -4321,26 +4227,26 @@ End subroutine
       end do
 !      write(*,*) "now=",now0
 !      stop
-!.....Loop over fixed moving particle nodes (if fixed_particles_flag turned on)
-      if (nm.gt.0 .and. fixed_particles_flag) then
-          do i=1,noi
-            ix=lni(1,i)
-            iy=lni(2,i)
-            iz=lni(3,i)
-            do j=0,14
-             node(ix,iy,iz)%fdd(j)=temp(j,ix,iy,iz)
-	          enddo
-          end do
-    !      write(*,*) "noi"
-          do i=1,nob
-            ix=lnb(1,i)
-            iy=lnb(2,i)
-            iz=lnb(3,i)
-            do j=0,14
-             node(ix,iy,iz)%fdd(j)=temp(j,ix,iy,iz)
-	          enddo
-          end do
-      end if
+! !.....Loop over fixed moving particle nodes (if fixed_particles_flag turned on)
+!       if (nm.gt.0 .and. fixed_particles_flag) then
+!           do i=1,noi
+!             ix=lni(1,i)
+!             iy=lni(2,i)
+!             iz=lni(3,i)
+!             do j=0,14
+!              node(ix,iy,iz)%fdd(j)=temp(j,ix,iy,iz)
+! 	          enddo
+!           end do
+!     !      write(*,*) "noi"
+!           do i=1,nob
+!             ix=lnb(1,i)
+!             iy=lnb(2,i)
+!             iz=lnb(3,i)
+!             do j=0,14
+!              node(ix,iy,iz)%fdd(j)=temp(j,ix,iy,iz)
+! 	          enddo
+!           end do
+!       end if
 !.....Loop over stationary particle nodes
       if (ns.gt.0)then
         p3=>head_lns
@@ -4362,7 +4268,7 @@ End subroutine
 !	    ixe=yb(2,iy)
 	      do ix=0,nx
           obst_count(node(ix,iy,iz)%obst) = obst_count(node(ix,iy,iz)%obst) + 1 !print *, node(ix,iy,iz)%obst,ix,iy,iz
-	      if(node(ix,iy,iz)%obst.eq.0 .or. (fixed_particles_flag .and. node(ix,iy,iz)%obst.eq.4))then
+	      if(node(ix,iy,iz)%obst.eq.0))then ! .or. (fixed_particles_flag .and. node(ix,iy,iz)%obst.eq.4
 	        call nodal_velocity(ix,iy,iz,nx,ny,nz,ux,uy,uz,den)
 
           if(use_MRT)then
