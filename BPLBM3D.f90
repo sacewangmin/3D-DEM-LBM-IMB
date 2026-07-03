@@ -13,15 +13,18 @@
 !            It includes DEM, BPM, LBM and Their coupling schemes.
 !
 !
-!  Modified by: Anders Bahrami
-!               
+!  Modified by: 
+!            Anders Bahrami            
 !            1) Velocity and Periodic Boundary conditions, May 2026
 !
-!               Ryan Nguyen
-!
+!            Ryan Nguyen
 !            1) MRT D3Q15 model, Jun 2026
 !            2) Improved paraview output, Jun 2026
 !            3) Body force subroutine added, Jun 2026
+! 
+!            Min Wang
+!            1) modified the B to be nonlinear function, Jun 2026
+!            2) modified body force subroutine for LBM, July 2026
 !
 !*****************************************************************************************************************************************
 !
@@ -402,9 +405,9 @@
           b_kt=b_kt/cc/cc
         end if
 !
-!.......Scaled gravity
+!.......Scaled gravity or unit convertion
       if(BODYF.eq.1)then
-	      gacce=9.81d0*dt/cc
+	      gacce=gacce*dt/cc
       else
         gacce=0.d0
       endif
@@ -437,7 +440,7 @@
           cb_cnf=phy_cnf
           b_ftmax=phy_ftmax
         end if
-        gacce=9.81d0
+!        gacce=9.81d0
 !        gacce=0.0d0
         time=dtime
       end if     
@@ -707,7 +710,7 @@
 	            exit loopmain
 	            endif
 !.............Perform contact detection and compute contact forces
-	            if(nm.ge.1)call contact_main
+	            if((.not.fix_packing) .and. nm.ge.1)call contact_main
 !.............Update moving particle velocity and position
 	            call update_moving_particle_position(nm,dtime,gacce1,vmax,isub)
 !.............update boundary bounding box
@@ -1230,6 +1233,7 @@ vertex(3,8)=zmax
             allocate(bc(1))
 !            read(10,*) bc(1),bc_mode
               read(10,*) periodic_flag,implement
+              read(10,*) gacce
 !.........type 2: specified pressure/density
           else if(bctype.eq.2)then
 !...........number of pressure edges 
@@ -1252,6 +1256,13 @@ vertex(3,8)=zmax
 !           write(*,*) dt
 !.........Lattice speed
           cc=dx/dt
+
+!       unit convertion
+!
+        if(bctype.eq.3) then
+            bc(1)=bc(1)/cc
+            bc(2)=bc(2)/cc
+	      endif   
 !.........Estimate critical time step for particle contact
 	      dtime=factor*4.0*sqrt(PI*ds*(minrad*dx)**3.0/kn/3.0)/dt
 !           write(*,*) dtime,factor,PI,ds,minrad*dx,kn,dt,tao,visco
