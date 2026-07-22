@@ -375,7 +375,8 @@
       integer,external::inactive_particle
       character(20) date,start_date,end_date,time1
       character(4) start_h,end_h,start_m,end_m,start_s,end_s
-      real(8) gatherStart, gatherEnd
+      integer(8) :: start_tick, end_tick, rate, max_tick
+      real(8) gatherStart, gatherEnd, elapsed_time
 
       real(8) ux2,uy2,uz2,den2
       integer ix2, iy2, iz2
@@ -394,6 +395,7 @@
       start_h=time1(1:2)
       start_m=time1(3:4)
       start_s=time1(5:6)
+      call system_clock(count=start_tick, count_rate=rate, count_max=max_tick)
 !.....if necessary, convert some variables from physical to lattice unit.
       if(LBM)then
         call boundary_max_coor
@@ -702,29 +704,35 @@
 !--------------------------------------------------------------------------
 !
 !--------------------------Main Loop---------------------------------------
+      call system_clock(count=end_tick)
+      elapsed_time = real(end_tick - start_tick) / real(rate)
+      1010 format('** Finished Initialization,  Wall-Clock Time = ',g12.5, ' **')
+      write(6,1010) elapsed_time
+  
       loopmain: do istep=1, msteps
 !.......Particle interactions
         if(nm.gt.0.and.istep.ge.1)then   
-!          write(*,*) "Loop", istep     
 	        if(LBM)then
 !...........................DEM part.......................................
 !.........Subcycling
-            loopinner: do isub=1,nsub
-!.............Check if all the moving particles are deactivated
-!	          i=inactive_particle()
+            if (.not.fixed_particles_flag) then
+              loopinner: do isub=1,nsub
+  !.............Check if all the moving particles are deactivated
+  !	          i=inactive_particle()
 
-              if(inactive_particle().eq.nm .and. .not.periodic_flag)then
-	            write(*,*) 'ALL the moving particles have been deactivated!'
-	            exit loopmain
-	            endif
-!.............Perform contact detection and compute contact forces
-	            ! if(nm.ge.1)call contact_main
-!.............Update moving particle velocity and position
-	            if (.not.fixed_particles_flag) call update_moving_particle_position(nm,dtime,gacce1,vmax,isub)
-!.............update boundary bounding box
-!             call boundary_boundingbox(ne0,le0,le1,ne1,edge,vertex,np,dx,icoor)
-!              if(empirical .and. istep==1) exit
-	          enddo loopinner
+                if(inactive_particle().eq.nm .and. .not.periodic_flag)then
+                write(*,*) 'ALL the moving particles have been deactivated!'
+                exit loopmain
+                endif
+  !.............Perform contact detection and compute contact forces
+                if(nm.ge.1) call contact_main
+  !.............Update moving particle velocity and position
+                call update_moving_particle_position(nm,dtime,gacce1,vmax,isub)
+  !.............update boundary bounding box
+  !             call boundary_boundingbox(ne0,le0,le1,ne1,edge,vertex,np,dx,icoor)
+  !              if(empirical .and. istep==1) exit
+              enddo loopinner
+            end if
 !..........................................................................
             if(IMB)then
 !.............Update moving particle boundary and interior node list
@@ -741,9 +749,9 @@
   
           else
 !----------------
-            if(nm.ge.1)call contact_main
+            if(nm.ge.1 .and. .not.fixed_particles_flag)call contact_main
 !...........Update moving particle velocity and position
-	          call update_moving_particle_position(nm,dtime,gacce,vmax,isub)
+	          if (.not.fixed_particles_flag) call update_moving_particle_position(nm,dtime,gacce,vmax,isub)
 !...........update boundary bounding box
 !            call update_wall_position    
 !----------------   
@@ -774,6 +782,7 @@
 !        	 call relaxation_turbulence
 !	        else
             call relaxation
+            
 !	        endif
 !write(*,*) "relaxation", istep 
 !.........Bounce back from obstacles:for fixed wall and stationary particles
@@ -793,22 +802,22 @@
           end if
 !.......The integral fluid density is checked regularly.
 
-          if(mod(istep,screen_steps).eq.0) call check_density(nx,ny,nz,istep,time)
+          if(mod(istep,screen_steps).eq.0) call check_density(nx,ny,nz,istep,time,start_tick,end_tick,rate)
         end if
                    
 !.......Output results
 !           write(*,1001) istep, particle(1)%F(1:3)!, particle(1)%coor(1:3)   
         if(LBM)then
           if(istep.eq.1)then
-           call write_results1
-           call write_spheres
+          !  call write_results1
+          !  call write_spheres
            write(20,1006) istep, particle(1)%coor(1:3),particle(1)%U(1:3),particle(1)%F(1:3)
            flush(20)
           endif
 
           if(mod(istep,outsteps).eq.0)then
-           call write_results1
-           call write_spheres
+          !  call write_results1
+          !  call write_spheres
            write(20,1006) istep, particle(1)%coor(1:3),particle(1)%U(1:3),particle(1)%F(1:3)
            flush(20)
            !.....calculate FLUID velocity at fluid nodes
@@ -837,6 +846,7 @@
         end do
 !        write(*,*) "Check end!", istep
 !...................................................................
+        !  if (istep == 100) stop
       end do loopmain
 !
 !.....simulation time
@@ -3416,13 +3426,13 @@ vertex(3,8)=zmax
     use solid,only:particle,boundary_dem,part_vir,num_vir
     IMPLICIT DOUBLE PRECISION (A-H,O-Z)
     integer isub
-	real(8) G(3)
-!
-	G(1)=0.d0
-!    
-	G(3)=0.d0
-	G(2)=-ga
-	vmax=0.0d0
+    real(8) G(3)
+  !
+    G(1)=0.d0
+  !    
+    G(3)=0.d0
+    G(2)=-ga
+    vmax=0.0d0
 !...for periodic boundary in X direction
     ! if(boundary_dem==1)then
     ! num_vir=0
@@ -3476,6 +3486,7 @@ vertex(3,8)=zmax
               ! ! X direction
               ! if(particle(ip)%coor(1)>nx) particle(ip)%coor(1)=particle(ip)%coor(1)-xmax-1
               ! if(particle(ip)%coor(1)<0) particle(ip)%coor(1)=particle(ip)%coor(1)+xmax+1
+              print *, "probably an error when dx/=10^-x"
               ! Y direction
               if(particle(ip)%coor(2)>ymax) particle(ip)%coor(2)=particle(ip)%coor(2)-(ymax+1)
               if(particle(ip)%coor(2)<0) particle(ip)%coor(2)=particle(ip)%coor(2)+(ymax+1)
@@ -4170,7 +4181,7 @@ End subroutine
 	  if(dx*dx+dy*dy+dz*dz.le.rad2) M=M+1
 	enddo
 	vol=M*1.d0/N
-  vol=0.2
+  ! vol=0.2
       return
     End subroutine
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -4194,9 +4205,9 @@ End subroutine
       real(8)::ez(14)=(/0,0,0,0,1,-1,1,-1,-1,1,1,-1,-1,1/)
       real(8) Fx, Fy, Fz
       integer ixs,ixe,nn,ipr
-      integer obst_count(0:4)
+      ! integer obst_count(0:4)
 
-      obst_count=0
+      ! obst_count=0
 !
 ! write(*,*) "relaxation is working at the beginning"
 !.....Initialise force vector
@@ -4267,7 +4278,7 @@ End subroutine
 !	    ixs=yb(1,iy)
 !	    ixe=yb(2,iy)
 	      do ix=0,nx
-          obst_count(node(ix,iy,iz)%obst) = obst_count(node(ix,iy,iz)%obst) + 1 !print *, node(ix,iy,iz)%obst,ix,iy,iz
+          ! obst_count(node(ix,iy,iz)%obst) = obst_count(node(ix,iy,iz)%obst) + 1 !print *, node(ix,iy,iz)%obst,ix,iy,iz
 	      if(node(ix,iy,iz)%obst.eq.0)then ! .or. (fixed_particles_flag .and. node(ix,iy,iz)%obst.eq.4
 	        call nodal_velocity(ix,iy,iz,nx,ny,nz,ux,uy,uz,den)
 
@@ -4376,7 +4387,7 @@ End subroutine
      end if
 !
 !
-     if (mod(istep,100).eq.1) print *, "obst_count",obst_count
+    !  if (mod(istep,100).eq.1) print *, "obst_count",obst_count
       return
     End subroutine
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -4537,8 +4548,8 @@ End subroutine
       particle(ip)%F(1)=particle(ip)%F(1)-B*fx
 	    particle(ip)%F(2)=particle(ip)%F(2)-B*fy
 	    particle(ip)%F(3)=particle(ip)%F(3)-B*fz
-!      write(*,*) fx,fy,fz
-!      stop
+    !  if (istep == 100) write(*,*) ip, B, fx,fy,fz, ix,iy,iz
+    !  stop
       ! in the future consider torque
 !        else
 !        end if
@@ -4575,6 +4586,7 @@ End subroutine
           enddo
           if ((obstacle.eq.2 .or. obstacle.eq.3)) then
               print *, "ERROR, should never happen!"
+              stop
               ! call bounceback_stationary_particles(ix,iy,iz,nx,ny,nz)
           end if
         end if
@@ -5019,9 +5031,10 @@ End subroutine
 !
 !
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    Subroutine check_density(nx,ny,nz,istep,time)  
+    Subroutine check_density(nx,ny,nz,istep,time,start_tick,end_tick,rate)  
     use fluid,only:node,temp,yb
     IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+    integer(8) :: start_tick, end_tick, rate
 !
       sum=0.d0
 !.....Loop over rows
@@ -5042,11 +5055,14 @@ End subroutine
         end do
        enddo
       end do
+
+      call system_clock(count=end_tick)
+      elapsed_time = real(end_tick - start_tick) / real(rate)
 !      cpu_time=cputime()
 !      write(*,*) cpu_time
 !
-      write(6,100) istep,time,sum
-  100 format('** Step =',i7, '  Time =',g11.4, '  Density =',g12.5, ' **')
+      write(6,100) istep,time,sum,elapsed_time
+  100 format('** Step =',i7, '  Time =',g11.4, '  Density =',g12.5, '  System-Clock Time = ',g12.5, ' **')
       return
     End subroutine
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
